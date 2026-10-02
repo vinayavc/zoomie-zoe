@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Doxie Arcade",
+  "version": "0.2.0",
+  "description": "Greybox prototype of a dachshund arcade mini-game: lasso socks with Zoe's leash.",
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "Play Doxie Arcade"
+  },
+  "permissions": ["storage"]
+}
