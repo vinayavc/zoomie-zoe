@@ -3,7 +3,7 @@
 
 import { CONFIG } from '../../config.js';
 import { polygonContains } from '../geom.js';
-import { blip, bonk } from '../audio.js';
+import { sfx } from '../audio.js';
 import { getBest, setBest } from '../storage.js';
 import { Zoe } from './zoe.js';
 import { Leash } from './leash.js';
@@ -63,6 +63,7 @@ export class Game {
     this.newBest = false;
     this.paused = false;
     this.scene = 'play';
+    sfx.yip();
   }
 
   canRestart() {
@@ -86,6 +87,7 @@ export class Game {
 
     this.elapsed += dt;
     this.timeLeft -= dt;
+    sfx.countdown(this.timeLeft, dt);
     if (this.cheeseT > 0) this.cheeseT -= dt;
     if (this.flashT > 0) this.flashT -= dt;
     for (const p of this.popups) if (p.active && (p.t += dt) >= CONFIG.POPUP_TIME) p.active = false;
@@ -96,6 +98,7 @@ export class Game {
 
     // Stretch-cinch: lunge, and the leash snaps shut from its end to her collar.
     if (this.input.consumeAction() && zoe.tryStretch()) {
+      sfx.cinch();
       if (leash.buildCinch(zoe)) this._closeLoop();
     }
     zoe.update(dt, this.input.steerAngle(zoe.x, zoe.y, zoe.heading), CONFIG.LEASH_LENGTH * CONFIG.CHEESE_LEASH_MULT);
@@ -131,6 +134,7 @@ export class Game {
     this.captures++;
     this._lastEmptyClose = this.elapsed; // don't count the next few frames as extra closes
     if (gotCheese) this.cheeseT = CONFIG.CHEESE_TIME;
+    if (gotCheese) sfx.squeak();
 
     this.chain = this.elapsed - this.lastCaptureT <= CONFIG.CHAIN_WINDOW ? this.chain + 1 : 1;
     this.lastCaptureT = this.elapsed;
@@ -148,7 +152,7 @@ export class Game {
     this._popup(cx, cy, '+' + pts, true);
     if (this.chain > 1) this._popup(cx, cy + 22, 'chain x' + this.chain, false);
     else if (n > 1) this._popup(cx, cy + 22, n + ' in one loop', false);
-    blip(this.chain);
+    sfx.caught(this.chain, n);
   }
 
   // While the stretch is ready, mark the items a press would catch.
@@ -178,13 +182,13 @@ export class Game {
         this.chain = 0; // combo reset
         this.lastCaptureT = -999;
         this._popup(zoe.x, zoe.y - 16, 'ouch!', false);
-        bonk();
+        sfx.boof();
       }
 
       if (this.leash.snapIfTouched(zoe, dog.x, dog.y, CONFIG.DOG_RADIUS) && dog.snapFxT <= 0) {
         dog.snapFxT = 0.6;
         this._popup(dog.x, dog.y - 18, 'snap!', false);
-        bonk();
+        sfx.twang();
       }
     }
   }
@@ -196,6 +200,7 @@ export class Game {
     this.downSinceOver = false;
     this.input.enabled = false;
     this.input.clear();
+    sfx.sigh();
     if (this.score > this.best) {
       this.best = this.score;
       this.newBest = true;

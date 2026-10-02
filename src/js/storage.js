@@ -33,3 +33,32 @@ export async function setBest(value) {
     // storage blocked (private mode etc.): the best score just won't persist
   }
 }
+
+// Sound on/off (M key). Same adapter as the best score.
+const MUTE_KEY = 'doxieArcade.muted';
+
+export async function getMuted() {
+  try {
+    const store = chromeStore();
+    if (store) {
+      const res = await store.get(MUTE_KEY);
+      return res[MUTE_KEY] === true;
+    }
+    return localStorage.getItem(MUTE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function setMuted(value) {
+  try {
+    const store = chromeStore();
+    if (store) {
+      await store.set({ [MUTE_KEY]: !!value });
+      return;
+    }
+    localStorage.setItem(MUTE_KEY, value ? '1' : '0');
+  } catch {
+    // storage blocked: mute just won't persist
+  }
+}

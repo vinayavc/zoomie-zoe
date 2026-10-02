@@ -2,12 +2,12 @@
 //   Touch:    floating thumb-pad (follows the thumb past its edge);
 //             action = second finger tap or the on-screen button
 //   Mouse:    Zoe steers toward the cursor; action = click
-//   Keyboard: left/right (A/D) rotate Zoe; up/down (W/S) do nothing; action = Space
+//   Keyboard: left/right (A/D) head Zoe toward screen-left/right; up/down (W/S) unused; action = Space
 // Whichever device was used last is in charge of steering.
 
 import { CONFIG } from '../config.js';
 
-// Rotational keyboard steering: left/right turn her; up/down are unused for now
+// Keyboard steering: left/right head her toward screen-left/right; up/down are unused for now
 // (still listed so the page doesn't scroll).
 const KEY_DIRS = {
   ArrowUp: 'up', KeyW: 'up',
@@ -70,13 +70,16 @@ export class Input {
     return a;
   }
 
-  // Desired heading for a head at (hx, hy) facing `heading`, or NaN for "keep going straight".
+  // Desired heading for a head at (hx, hy), or NaN for "keep going straight".
+  // (`heading` is passed in but not needed by the current schemes.)
   steerAngle(hx, hy, heading) {
     if (this.mode === 'keys') {
-      // Aim 90 degrees off the current heading, so she turns at her full turn rate
-      // for as long as the key is held (holding one key = circling).
-      const turn = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0);
-      return turn === 0 ? NaN : heading + turn * Math.PI / 2;
+      // Left = head toward screen-left (angle pi), right = screen-right (angle 0).
+      // Zoe turns there at her normal turn rate, the shortest way.
+      // No key, or both keys, = keep going straight.
+      const x = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0);
+      if (x === 0) return NaN;
+      return x > 0 ? 0 : Math.PI;
     }
     if (this.mode === 'mouse') {
       const dx = this.mouse.x - hx, dy = this.mouse.y - hy;
