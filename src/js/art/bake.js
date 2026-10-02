@@ -26,6 +26,10 @@ export function bakeAll(mainCtx, k) {
     },
     dogs: [bakeDog(0, k, paper), bakeDog(1, k, paper)],
     glow: bakeGlow(k),
+    ball: bakeBall(k, paper),
+    bath: bakeBath(k, paper),
+    bubble: bakeBubble(k),
+    tuck: bakeTuck(k, paper),
     cardTitle: bakeCard(324, 400, k, paper, 11),
     cardOver: bakeCard(290, 230, k, paper, 23),
     zoeCream: null,
@@ -251,9 +255,8 @@ function bakeBackground(k, paper) {
     wash(g, quad, P.sun, rng, { layers: 18, alpha: 0.022, depth: 4, var: 0.3, baseVar: 0.08 });
   }
 
-  // sherpa blanket piles hugging the edges (decor only)
-  sherpaPile(g, rng, [[W + 10, 250], [W - 30, 268], [W - 42, 318], [W - 22, 368], [W + 12, 390]]);
-  sherpaPile(g, rng, [[-14, H - 112], [32, H - 92], [58, H - 46], [46, H + 12], [-14, H + 12]]);
+  // sherpa blanket piles hugging the edges (Zoe hides in these: CONFIG.BLANKETS)
+  for (const ring of CONFIG.BLANKETS) sherpaPile(g, rng, ring);
 
   // gentle edge darkening
   g.globalAlpha = 1;
@@ -573,5 +576,164 @@ function bakeCard(w, h, k, paper, seed) {
   g.stroke();
   grainAtop(L, paper, 0.22);
   L.pad = pad;
+  return L;
+}
+
+// ---------------------------------------------------------------- Phase 4A sprites
+
+// Her red-orange ball: a paper-cutout disc with a curved cream seam.
+// No shadow baked in: the renderer puts a hard shadow on the floor so it can bounce.
+function bakeBall(k, paper) {
+  const S = 26, r = CONFIG.BALL_RADIUS;
+  const L = makeLayer(S, S, k);
+  const g = L.g;
+  const rng = makeRng(808);
+  g.translate(S / 2, S / 2);
+  const disc = polygon(0, 0, r, 28, null);
+  g.fillStyle = P.paper;
+  fillPts(g, tornOutline(polygon(0, 0, r + 2, 28, null), 1.1, rng));
+  g.save();
+  pathPts(g, disc);
+  g.clip();
+  g.fillStyle = P.ball;
+  fillPts(g, disc);
+  wash(g, polygon(-2.5, -2.5, 4.5, 7, rng), '#ffffff', rng, { layers: 6, alpha: 0.07 });
+  wash(g, polygon(3, 3.5, 6, 7, rng), P.ballDark, rng, { layers: 6, alpha: 0.12 });
+  g.strokeStyle = P.ballSeam;
+  g.lineWidth = 1.5;
+  g.lineCap = 'round';
+  g.beginPath(); g.arc(-r * 1.25, 0, r * 0.95, -0.9, 0.9); g.stroke();
+  g.beginPath(); g.arc(r * 1.25, 0, r * 0.95, Math.PI - 0.9, Math.PI + 0.9); g.stroke();
+  g.fillStyle = 'rgba(255,248,230,0.85)';
+  g.beginPath(); g.ellipse(-2.6, -3.2, 1.8, 1.1, -0.6, 0, Math.PI * 2); g.fill();
+  g.restore();
+  g.strokeStyle = P.ink;
+  g.lineWidth = 1.1;
+  pathPts(g, disc);
+  g.stroke();
+  grainAtop(L, paper, 0.3);
+  return L;
+}
+
+// The bath: a soapy watercolor puddle on a torn paper rim, foam along its edge.
+function bakeBath(k, paper) {
+  const rx = CONFIG.BATH_RX, ry = CONFIG.BATH_RY;
+  const SW = rx * 2 + 26, SH = ry * 2 + 26;
+  const L = makeLayer(SW, SH, k);
+  const g = L.g;
+  const rng = makeRng(4242);
+  g.translate(SW / 2, SH / 2);
+  g.lineJoin = 'round';
+  const shape = smoothPts(deform(polygon(0, 0, rx, 12, rng, rx + 1, ry + 1), 1, 0.06, rng), 2);
+  const rim = tornOutline(offsetPts(shape, 2.6), 1.6, rng);
+
+  g.fillStyle = P.shadow;
+  g.save(); g.translate(2.2, 3); fillPts(g, rim); g.restore();
+  g.fillStyle = P.paper;
+  fillPts(g, rim);
+  g.save();
+  pathPts(g, shape);
+  g.clip();
+  g.fillStyle = P.water;
+  fillPts(g, shape);
+  wash(g, polygon(4, 5, rx * 0.8, 9, rng, rx * 0.8, ry * 0.7), P.waterDeep, rng, { layers: 12, alpha: 0.07 });
+  wash(g, polygon(-8, -6, rx * 0.5, 8, rng, rx * 0.5, ry * 0.4), '#ffffff', rng, { layers: 8, alpha: 0.09 });
+  // ripples
+  g.strokeStyle = 'rgba(255,255,255,0.7)';
+  g.lineWidth = 1;
+  g.lineCap = 'round';
+  for (const [x, y, w] of [[-6, 2, 9], [8, -5, 6], [5, 8, 7]]) {
+    g.beginPath(); g.ellipse(x, y, w, w * 0.35, 0, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+  }
+  g.restore();
+  g.strokeStyle = P.waterInk;
+  g.globalAlpha = 0.85;
+  g.lineWidth = 1.1;
+  pathPts(g, shape);
+  g.stroke();
+  g.globalAlpha = 1;
+  // foam clumps along the rim
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + rng() * 0.3;
+    const fx = Math.cos(a) * rx * 0.95, fy = Math.sin(a) * ry * 0.95;
+    for (let j = 0; j < 3; j++) {
+      const r = 2 + rng() * 2.6;
+      const x = fx + (rng() - 0.5) * 5, y = fy + (rng() - 0.5) * 4;
+      g.fillStyle = P.foam;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(78,106,130,0.45)';
+      g.lineWidth = 0.6;
+      g.beginPath(); g.arc(x, y, r, Math.PI * 0.1, Math.PI * 0.9); g.stroke();
+    }
+  }
+  grainAtop(L, paper, 0.25);
+  L.ox = SW / 2;
+  L.oy = SH / 2;
+  return L;
+}
+
+// One soap bubble (drawn at several sizes as they float up from the bath).
+function bakeBubble(k) {
+  const S = 14;
+  const L = makeLayer(S, S, k);
+  const g = L.g;
+  const c = S / 2, r = S / 2 - 1.2;
+  g.fillStyle = 'rgba(214,236,244,0.45)';
+  g.beginPath(); g.arc(c, c, r, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(78,106,130,0.75)';
+  g.lineWidth = 0.9;
+  g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,0.95)';
+  g.lineWidth = 1.2;
+  g.beginPath(); g.arc(c, c, r - 1.6, Math.PI * 1.1, Math.PI * 1.45); g.stroke();
+  g.fillStyle = '#ffffff';
+  g.beginPath(); g.arc(c + r * 0.35, c - r * 0.4, 0.9, 0, Math.PI * 2); g.fill();
+  return L;
+}
+
+// Blanket-tuck overlay: a sherpa flap laid over Zoe's head when she hides.
+// Drawn facing +x; the front edge is flat-ish so her nose can peek out.
+function bakeTuck(k, paper) {
+  const S = 40;
+  const L = makeLayer(S, S, k);
+  const g = L.g;
+  const rng = makeRng(77);
+  g.translate(S / 2, S / 2);
+  const base = smoothPts([[-13, -11], [5, -13], [9, -6], [8, 6], [5, 13], [-13, 11], [-16, 0]], 2);
+  const torn = tornOutline(deform(base, 1, 0.05, rng), 1.6, rng);
+  g.fillStyle = P.shadow;
+  g.save(); g.translate(1.8, 2.6); fillPts(g, torn); g.restore();
+  g.fillStyle = P.sherpa;
+  fillPts(g, torn);
+  g.save();
+  pathPts(g, torn);
+  g.clip();
+  wash(g, polygon(-3, -3, 9, 8, rng), P.sherpaLight, rng, { layers: 8, alpha: 0.08 });
+  g.lineWidth = 1.1;
+  g.lineCap = 'round';
+  for (let i = 0; i < 46; i++) {
+    const x = -16 + rng() * 26, y = -13 + rng() * 26;
+    g.strokeStyle = rng() < 0.55 ? P.sherpaDark : P.sherpaLight;
+    g.globalAlpha = 0.35 + rng() * 0.3;
+    g.beginPath(); g.arc(x, y, 1.2 + rng() * 1.3, rng() * 6, rng() * 6 + 3.5); g.stroke();
+  }
+  // the lifted front fold catches the light
+  g.globalAlpha = 0.5;
+  g.strokeStyle = P.sherpaLight;
+  g.lineWidth = 2.2;
+  g.beginPath(); g.moveTo(5, -11); g.quadraticCurveTo(10, 0, 5, 11); g.stroke();
+  g.globalAlpha = 1;
+  g.restore();
+  g.strokeStyle = P.paper;
+  g.globalAlpha = 0.7;
+  g.lineWidth = 1.2;
+  pathPts(g, torn);
+  g.stroke();
+  g.strokeStyle = P.sherpaDark;
+  g.globalAlpha = 0.8;
+  g.lineWidth = 0.8;
+  g.stroke();
+  g.globalAlpha = 1;
+  grainAtop(L, paper, 0.25);
   return L;
 }

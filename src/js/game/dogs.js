@@ -4,7 +4,7 @@ import { CONFIG } from '../../config.js';
 import { turnToward } from '../geom.js';
 
 export function makeDog(zoe) {
-  const dog = { x: 0, y: 0, heading: 0, wanderAngle: 0, wanderT: 0, retreatT: 0, chasing: false, snapFxT: 0 };
+  const dog = { x: 0, y: 0, heading: 0, wanderAngle: 0, wanderT: 0, retreatT: 0, chasing: false, snapFxT: 0, lostT: 0, confused: false };
   // Pick an edge spot far from Zoe.
   const W = CONFIG.ARENA_W, H = CONFIG.ARENA_H, r = CONFIG.DOG_RADIUS;
   let bestX = r, bestY = H - r, bestD = -1;
@@ -23,22 +23,32 @@ export function makeDog(zoe) {
   return dog;
 }
 
-export function updateDog(dog, dt, zoe) {
+// bath (optional): dogs steer away from a sliding bath puddle.
+// Dogs can't chase Zoe while she hides in a blanket, nor for lostT after.
+export function updateDog(dog, dt, zoe, bath) {
   const dx = zoe.x - dog.x, dy = zoe.y - dog.y;
   const dist = Math.hypot(dx, dy);
   let target, speed;
   dog.chasing = false;
+  dog.confused = false;
   if (dog.snapFxT > 0) dog.snapFxT -= dt;
+  if (dog.lostT > 0) dog.lostT -= dt;
+  const away = bath ? bath.repel(dog) : NaN;
 
-  if (dog.retreatT > 0) {
+  if (!Number.isNaN(away)) {
+    target = away;
+    speed = CONFIG.DOG_WANDER_SPEED;
+    dog.wanderAngle = away;
+  } else if (dog.retreatT > 0) {
     dog.retreatT -= dt;
     target = Math.atan2(-dy, -dx);
     speed = CONFIG.DOG_WANDER_SPEED;
-  } else if (dist < CONFIG.DOG_CHASE_RADIUS && !zoe.isStunned()) {
+  } else if (dist < CONFIG.DOG_CHASE_RADIUS && !zoe.isStunned() && !zoe.hidden && dog.lostT <= 0) {
     dog.chasing = true;
     target = Math.atan2(dy, dx);
     speed = CONFIG.DOG_CHASE_SPEED;
   } else {
+    dog.confused = dist < CONFIG.DOG_CHASE_RADIUS && (zoe.hidden || dog.lostT > 0);
     dog.wanderT -= dt;
     if (dog.wanderT <= 0) {
       dog.wanderAngle = dog.heading + (Math.random() - 0.5) * 2.4;

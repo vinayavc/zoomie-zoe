@@ -3,7 +3,10 @@
 // shadow, and a squash-and-stretch lunge. Animation state lives here only;
 // the game's Zoe is read, never written.
 //
-// A "pose" is { x, y, heading, segX, segY, n, odo, extra, lunge (0..1), stunned }.
+// A "pose" is { x, y, heading, segX, segY, n, odo, extra, lunge (0..1), stunned },
+// plus optional { zoom (bool), nap ('' | 'belly' | 'donut' | 'loaf') }.
+// A napping Zoe has closed eyes; 'belly' shows her tummy and paws in the air,
+// 'loaf' and 'donut' tuck her legs away.
 
 import { P, ZOE_ART as A } from './palette.js';
 import { catmullClosed, hashNoise } from './util.js';
@@ -118,7 +121,8 @@ export class ZoeRig {
     // stretched body gets thinner (volume-ish)
     const base = 60;
     const thin = Math.max(0.68, Math.min(1, Math.sqrt(base / (base + pose.extra))));
-    for (let i = 0; i < n; i++) jw[i] = A.bodyW[Math.min(A.bodyW.length - 1, Math.round((i / (n - 1)) * (A.bodyW.length - 1)))] * thin;
+    const fat = pose.nap === 'loaf' ? 1.18 : 1;
+    for (let i = 0; i < n; i++) jw[i] = A.bodyW[Math.min(A.bodyW.length - 1, Math.round((i / (n - 1)) * (A.bodyW.length - 1)))] * thin * fat;
     return n;
   }
 
@@ -142,20 +146,24 @@ export class ZoeRig {
     const h = pose.heading, c = Math.cos(h), s = Math.sin(h);
     const ang = this.angles;
     const ja = this.ja;
-    const lunge = pose.lunge > 0;
-    // Ears: hang back and outward; streaming straight back in a lunge, flopping when stunned.
+    const lunge = pose.lunge > 0 || pose.zoom;
+    const nap = pose.nap || '';
+    // Ears: hang back and outward; streaming straight back in a lunge or zoomies,
+    // flopping when stunned, splayed flat when she naps belly-up.
     for (const side of [-1, 1]) {
       const ax = pose.x + c * 1.2 - s * side * 5.8, ay = pose.y + s * 1.2 + c * side * 5.8;
-      const spread = pose.stunned ? 0.7 + 0.18 * Math.sin(this.t * 14) : lunge ? 0.12 : 0.3;
+      let spread = pose.stunned ? 0.7 + 0.18 * Math.sin(this.t * 14) : lunge ? 0.12 : 0.3;
+      if (nap) spread = nap === 'belly' ? 1.35 : 0.55;
       for (let i = 0; i < 4; i++) ang[i] = h + Math.PI - side * (spread - i * 0.05);
       (side < 0 ? this.earL : this.earR).step(ax, ay, ang, lunge ? 0.12 : 0.2, 0.86);
     }
     // Tail: plume from the rump, carried in a soft curl with a wag.
     const last = n - 1;
     const back = ja[last] + Math.PI;
-    const wagSpeed = pose.stunned ? 4 : 11;
-    const wag = Math.sin(this.t * wagSpeed) * 0.38;
-    for (let i = 0; i < 5; i++) ang[i] = back + wag * (0.5 + i * 0.25) + i * 0.2;
+    const wagSpeed = nap ? 1.3 : pose.stunned ? 4 : pose.zoom ? 17 : 11;
+    const wag = Math.sin(this.t * wagSpeed) * (nap ? 0.1 : 0.38);
+    const curl = nap === 'donut' ? 0.42 : 0.2; // the donut's tail wraps round her nose
+    for (let i = 0; i < 5; i++) ang[i] = back + wag * (0.5 + i * 0.25) + i * curl;
     const tx = this.jx[last] + Math.cos(back) * 4.5, ty = this.jy[last] + Math.sin(back) * 4.5;
     this.tail.step(tx, ty, ang, 0.22, 0.82);
   }
@@ -284,21 +292,31 @@ export class ZoeRig {
     ctx.lineWidth = ink * 0.8;
     ctx.stroke(tail);
 
-    // 3. stubby legs on a gait cycle, behind the body
-    this._legs(ctx, pose, n, art);
+    // 3. stubby legs on a gait cycle, behind the body (tucked away in a loaf or donut nap)
+    const nap = pose.nap || '';
+    if (nap === 'belly') this._pawsUp(ctx, n, art);
+    else if (!nap) this._legs(ctx, pose, n, art);
 
     // 4. body: cream base, apricot saddle, edge darkening, ink line
     ctx.fillStyle = art.zoeCream;
     ctx.fill(body);
     ctx.save();
     ctx.clip(body);
-    ctx.strokeStyle = art.zoeSaddle;
     const spine = this._spinePath(n);
     const bw = this.jw[Math.floor(n / 2)];
-    for (const f of [1.5, 1.25, 1.0, 0.78, 0.56]) {
-      ctx.globalAlpha = 0.27;
-      ctx.lineWidth = bw * f;
+    if (nap === 'belly') {
+      // tummy up: pale cream with a rosy belly wash instead of the saddle
+      ctx.strokeStyle = P.blush;
+      ctx.globalAlpha = 0.28;
+      ctx.lineWidth = bw * 0.9;
       ctx.stroke(spine);
+    } else {
+      ctx.strokeStyle = art.zoeSaddle;
+      for (const f of [1.5, 1.25, 1.0, 0.78, 0.56]) {
+        ctx.globalAlpha = 0.27;
+        ctx.lineWidth = bw * f;
+        ctx.stroke(spine);
+      }
     }
     ctx.globalAlpha = 1;
     ctx.lineWidth = 4;
@@ -328,9 +346,9 @@ export class ZoeRig {
     ctx.save();
     ctx.clip(head);
     ctx.fillStyle = art.zoeSaddle;
-    ctx.globalAlpha = 0.45;
+    ctx.globalAlpha = nap === 'belly' ? 0.2 : 0.45; // belly-up: we see her paler chin
     ctx.beginPath(); ctx.ellipse(-1.5, 0, 8.6, 6.8, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = nap === 'belly' ? 0.25 : 0.7;
     ctx.beginPath(); ctx.ellipse(-2.5, 0, 6.8, 4.6, 0, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 0.4;
     ctx.beginPath(); ctx.ellipse(7.5, 0, 6, 2.1, 0, 0, Math.PI * 2); ctx.fill(); // muzzle ridge
@@ -371,6 +389,30 @@ export class ZoeRig {
     if (pose.stunned) this._stars(ctx, pose);
   }
 
+  // Belly-up nap: four little legs in the air with pink paw pads, paddling in a dream.
+  _pawsUp(ctx, n, art) {
+    const { jx, jy, ja, jw } = this;
+    const front = Math.min(2, n - 1), hind = Math.max(1, n - 3);
+    ctx.lineCap = 'round';
+    for (const [j, off] of [[front, 0], [hind, 1.7]]) {
+      const c = Math.cos(ja[j]), s = Math.sin(ja[j]);
+      for (const side of [-1, 1]) {
+        const paddle = Math.sin(this.t * 3.2 + off + side) * 1.4;
+        const nx = -s * side, ny = c * side;
+        const bx = jx[j] + nx * (jw[j] - 2.5), by = jy[j] + ny * (jw[j] - 2.5);
+        const px = bx + nx * 6 + c * (paddle + (j === front ? 2 : -2)), py = by + ny * 6 + s * (paddle + (j === front ? 2 : -2));
+        ctx.strokeStyle = P.ink;
+        ctx.lineWidth = 5.6;
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(px, py); ctx.stroke();
+        ctx.strokeStyle = art.zoeCream;
+        ctx.lineWidth = 3.9;
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(px, py); ctx.stroke();
+        ctx.fillStyle = P.pawPad;
+        ctx.beginPath(); ctx.arc(px, py, 1.3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
   _headXform(ctx, pose, hsx, hsy, wob) {
     ctx.translate(pose.x, pose.y);
     ctx.rotate(pose.heading + wob);
@@ -387,6 +429,7 @@ export class ZoeRig {
       ctx.quadraticCurveTo(1.6, s * 4.4, 2.6, s * 5.6);
       ctx.stroke();
     }
+    if (pose.nap) { this._sleepyFace(ctx, pose); return; }
     // big soft brown eyes with an ink rim and a white highlight
     for (const s of [-1, 1]) {
       const ex = 3.6, ey = s * 3.9;
@@ -411,6 +454,38 @@ export class ZoeRig {
     ctx.stroke();
     ctx.fillStyle = 'rgba(246,234,213,0.85)';
     ctx.beginPath(); ctx.arc(nx - 0.4, -1, 0.6, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Napping: closed eyes (soft ink curves), the same rosy nose, and a tiny
+  // tongue "blep" when she's belly-up.
+  _sleepyFace(ctx, pose) {
+    ctx.strokeStyle = P.ink;
+    ctx.lineWidth = 0.9;
+    ctx.lineCap = 'round';
+    for (const s of [-1, 1]) {
+      const ex = 3.6, ey = s * 3.9;
+      ctx.beginPath();
+      ctx.moveTo(ex - 1.9, ey);
+      ctx.quadraticCurveTo(ex, ey + s * 1.8, ex + 1.9, ey);
+      ctx.stroke();
+    }
+    const nx = A.muzzleX + A.muzzleRX - 1.2;
+    if (pose.nap === 'belly') {
+      ctx.fillStyle = '#E58C8C';
+      ctx.strokeStyle = P.ink;
+      ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.ellipse(nx - 2.6, 4.2, 1.5, 1.1, 0.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.fillStyle = P.nose;
+    ctx.strokeStyle = P.ink;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(nx + 1.7, 0);
+    ctx.quadraticCurveTo(nx + 1.3, 2.9, nx - 1.4, 2.6);
+    ctx.quadraticCurveTo(nx - 2.4, 0, nx - 1.4, -2.6);
+    ctx.quadraticCurveTo(nx + 1.3, -2.9, nx + 1.7, 0);
+    ctx.fill();
+    ctx.stroke();
   }
 
   // wavy fringe strokes on the ears (long hair)

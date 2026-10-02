@@ -20,8 +20,10 @@ let lastScene = '';
 let clock = 0;
 const rig = new ZoeRig();
 const titleRig = new ZoeRig();
+const napRig = new ZoeRig();
 const fx = new Fx();
-const pose = { x: 0, y: 0, heading: 0, segX: null, segY: null, n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false };
+const pose = { x: 0, y: 0, heading: 0, segX: null, segY: null, n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false, zoom: false, nap: '' };
+let tuckA = 0; // 0..1: how far the blanket flap is pulled over her head
 const titlePose = { x: 0, y: 0, heading: 0, segX: new Float32Array(CONFIG.SEG_COUNT), segY: new Float32Array(CONFIG.SEG_COUNT), n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false };
 const leashX = new Float32Array(1100), leashY = new Float32Array(1100);
 
@@ -49,7 +51,8 @@ export function render(ctx, view, game, input, debug) {
   clock += dt;
   ensureArt(ctx, now);
 
-  if (game.scene === 'play' && lastScene !== 'play') { rig.reset(); fx.reset(game); }
+  if (game.scene === 'play' && lastScene !== 'play') { rig.reset(); fx.reset(game); tuckA = 0; }
+  if (game.scene === 'over' && lastScene !== 'over') startNap(game);
   lastScene = game.scene;
 
   // background (baked: bedspread, sun patch, blankets, HUD paper strip)
@@ -64,20 +67,28 @@ export function render(ctx, view, game, input, debug) {
   fx.update(game, game.paused ? 0 : dt);
 
   if (game.scene !== 'title') {
+    drawBath(ctx, game);
     drawFlash(ctx, game);
-    drawLeash(ctx, game);
+    // at game over the leash fades away while she flops into her nap
+    const leashA = game.scene === 'over' ? 1 - game.overT / CONFIG.NAP_FLOP_TIME : 1;
+    if (leashA > 0) { ctx.globalAlpha = leashA; drawLeash(ctx, game); ctx.globalAlpha = 1; }
     if (game.scene === 'play') drawCinchPreview(ctx, game);
     drawItems(ctx, game);
+    drawBall(ctx, game, frozen || game.hitStop > 0);
     drawDogs(ctx, game, frozen || game.hitStop > 0);
-    drawZoe(ctx, game, frozen || game.hitStop > 0 ? 0 : dt);
+    if (game.scene !== 'over') {
+      drawSpeedLines(ctx, game);
+      drawZoe(ctx, game, frozen || game.hitStop > 0 ? 0 : dt);
+      drawTuck(ctx, game, game.paused ? 0 : dt);
+    }
     fx.draw(ctx);
-    drawPopups(ctx, game);
+    if (game.scene !== 'over') drawPopups(ctx, game);
   }
   drawHud(ctx, game);
   if (game.scene === 'play' && !game.paused) drawTouchControls(ctx, input, game);
 
   if (game.scene === 'title') drawTitle(ctx, dt);
-  else if (game.scene === 'over') drawGameOver(ctx, game);
+  else if (game.scene === 'over') drawGameOver(ctx, game, dt);
   else if (game.paused) drawCard(ctx, art.cardOver, 'Paused', ['tap or press Space to resume']);
 
   if (debug.on && game.scene !== 'title') drawDebug(ctx, game, debug);
@@ -136,6 +147,7 @@ function strokeLeash(ctx, n, dx, dy) {
 function drawLeash(ctx, game) {
   const n = leashPoints(game);
   const cheese = game.cheeseT > 0;
+  const wet = game.wetT > 0;
   const ex = leashX[n - 1], ey = leashY[n - 1];
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -145,15 +157,25 @@ function drawLeash(ctx, game) {
   strokeLeash(ctx, n, 1.6, 2.4);
   ctx.beginPath(); ctx.arc(ex + 1.6, ey + 2.4, 4.2, 0, Math.PI * 2); ctx.stroke();
   // rope body + twisted highlight
-  ctx.strokeStyle = cheese ? P.ropeCheese : P.rope;
+  ctx.strokeStyle = wet ? P.wetRope : cheese ? P.ropeCheese : P.rope;
   ctx.lineWidth = cheese ? 3.6 : 2.8;
   strokeLeash(ctx, n, 0, 0);
   ctx.beginPath(); ctx.arc(ex, ey, 4.2, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = cheese ? P.ropeCheeseLight : P.ropeLight;
+  ctx.strokeStyle = wet ? P.wetRopeLight : cheese ? P.ropeCheeseLight : P.ropeLight;
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 3.2]);
   strokeLeash(ctx, n, -0.4, -0.4);
   ctx.setLineDash([]);
+  if (wet) {
+    // soggy: drips falling off the rope
+    ctx.fillStyle = P.waterDeep;
+    for (let i = 6; i < n; i += 9) {
+      const f = (clock * 1.6 + i * 0.37) % 1;
+      ctx.globalAlpha = 0.85 * (1 - f);
+      ctx.beginPath(); ctx.ellipse(leashX[i], leashY[i] + 2 + f * 6, 1.1, 1.6, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 
 // Stitched dotted line from the leash end to Zoe; would-catch items glow.
@@ -228,21 +250,128 @@ function drawDogs(ctx, game, frozen) {
     ctx.rotate(d.heading + wob);
     ctx.drawImage(sp.c, -sp.ox, -sp.oy, sp.w, sp.h);
     ctx.restore();
-    if (d.chasing) {
-      const y = d.y - r - 9 + Math.sin(clock * 10) * 1.2;
-      ctx.fillStyle = P.shadowSoft;
-      ctx.beginPath(); ctx.ellipse(d.x + 1, y + 1.4, 5.4, 6.4, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = P.paper;
-      ctx.beginPath(); ctx.ellipse(d.x, y, 5.4, 6.4, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = P.ink; ctx.lineWidth = 0.8; ctx.stroke();
-      ctx.fillStyle = P.rope;
-      ctx.font = 'bold 11px ' + HAND;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('!', d.x, y + 0.5);
-      ctx.textBaseline = 'alphabetic';
-    }
+    if (game.scene !== 'play') continue; // no "!"/"?" tags while she naps
+    if (d.chasing) tag(ctx, d.x, d.y - r - 9 + Math.sin(clock * 10) * 1.2, '!', P.rope);
+    else if (d.confused) tag(ctx, d.x + Math.sin(clock * 3 + i) * 1.5, d.y - r - 9, '?', P.teal);
   }
+}
+
+// A little paper tag with one bold character ("!" chasing, "?" lost her).
+function tag(ctx, x, y, ch, color) {
+  ctx.fillStyle = P.shadowSoft;
+  ctx.beginPath(); ctx.ellipse(x + 1, y + 1.4, 5.4, 6.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = P.paper;
+  ctx.beginPath(); ctx.ellipse(x, y, 5.4, 6.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = P.ink; ctx.lineWidth = 0.8; ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.font = 'bold 11px ' + HAND;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(ch, x, y + 0.5);
+  ctx.textBaseline = 'alphabetic';
+}
+
+// ---------- the ball: a bouncing paper ball with a sunny glow ----------
+function drawBall(ctx, game, frozen) {
+  const b = game.ball;
+  if (!b.active) return;
+  const left = CONFIG.BALL_LIFETIME - b.age;
+  if (left < CONFIG.BALL_BLINK && Math.floor(left * 8) % 2 === 0) return; // about to roll away
+  const a = Math.min(1, b.age / 0.25) - 1;
+  const pop = 1 + 2.7 * a * a * a + 1.7 * a * a;
+  const hop = frozen ? 0 : Math.abs(Math.sin(clock * 5.5)) * 4.5;
+  const g = art.glow;
+  const gs = 34 * (0.9 + 0.1 * Math.sin(clock * 6));
+  ctx.globalAlpha = 0.7;
+  ctx.drawImage(g.c, b.x - gs / 2, b.y - gs / 2, gs, gs);
+  ctx.globalAlpha = 1;
+  // hard shadow stays on the floor and shrinks as the ball rises
+  const sh = 1 - hop / 12;
+  ctx.fillStyle = P.shadow;
+  ctx.beginPath(); ctx.ellipse(b.x + 1.6, b.y + 2.6, CONFIG.BALL_RADIUS * sh, CONFIG.BALL_RADIUS * 0.75 * sh, 0, 0, Math.PI * 2); ctx.fill();
+  const sp = art.ball;
+  ctx.save();
+  ctx.translate(b.x, b.y - hop);
+  ctx.rotate(Math.sin(clock * 2) * 0.5);
+  ctx.scale(pop, pop);
+  ctx.drawImage(sp.c, -sp.w / 2, -sp.h / 2, sp.w, sp.h);
+  ctx.restore();
+}
+
+// ---------- the bath: a soapy puddle that wobbles a warning, then slides ----------
+function drawBath(ctx, game) {
+  const bath = game.bath;
+  if (bath.state === 'off') return;
+  const warn = bath.state === 'warn';
+  const sp = art.bath;
+  ctx.save();
+  ctx.translate(bath.x, bath.y);
+  if (warn) {
+    ctx.globalAlpha = 0.45 + 0.2 * Math.sin(clock * 12);
+    ctx.rotate(Math.sin(clock * 15) * 0.07);
+    const sc = 1 + 0.05 * Math.sin(clock * 10);
+    ctx.scale(sc, 1 / sc);
+  } else {
+    ctx.rotate(Math.sin(clock * 3) * 0.025);
+  }
+  ctx.drawImage(sp.c, -sp.ox, -sp.oy, sp.w, sp.h);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  // bubbles float up off the suds
+  const bb = art.bubble;
+  for (let i = 0; i < 5; i++) {
+    const ph = (clock * 0.55 + i / 5) % 1;
+    const size = (5 + (i % 3) * 2.2) * (0.7 + ph * 0.5);
+    const x = bath.x + Math.sin(i * 2.3 + clock * 1.4) * CONFIG.BATH_RX * 0.55;
+    const y = bath.y - CONFIG.BATH_RY * 0.2 - ph * 30;
+    ctx.globalAlpha = (warn ? 0.6 : 1) * (1 - ph);
+    ctx.drawImage(bb.c, x - size / 2, y - size / 2, size, size);
+  }
+  ctx.globalAlpha = 1;
+  if (warn) tag(ctx, bath.x, bath.y - CONFIG.BATH_RY - 12 + Math.sin(clock * 10) * 1.2, '!', P.waterInk);
+}
+
+// ---------- zoomies: ink speed lines streaming off her sides ----------
+function drawSpeedLines(ctx, game) {
+  const z = game.zoe;
+  if (z.zoomT <= 0) return;
+  const fade = Math.min(1, z.zoomT / 0.5);
+  const c = Math.cos(z.heading), s = Math.sin(z.heading);
+  ctx.lineCap = 'round';
+  for (let k = -2; k <= 2; k++) {
+    if (k === 0) continue;
+    const flick = (clock * 6 + k * 0.29) % 1;
+    const side = k * 6 + Math.sign(k) * (5 + flick * 2);   // just outside her body and ears
+    const b0 = 4 + Math.abs(k) * 9 + flick * 12, len = 14 + (1 - flick) * 12;
+    const x0 = z.x - c * b0 - s * side, y0 = z.y - s * b0 + c * side;
+    const x1 = x0 - c * len, y1 = y0 - s * len;
+    ctx.globalAlpha = fade * (1 - flick * 0.7);
+    ctx.strokeStyle = P.paper;
+    ctx.lineWidth = 3.6;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.strokeStyle = P.ink;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- hiding: a sherpa flap pulled over her head (eyes peek out) ----------
+function drawTuck(ctx, game, dt) {
+  const z = game.zoe;
+  tuckA += ((z.hidden ? 1 : 0) - tuckA) * Math.min(1, dt * 12);
+  if (tuckA < 0.02) return;
+  const sp = art.tuck;
+  const c = Math.cos(z.heading), s = Math.sin(z.heading);
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, tuckA * 1.3);
+  ctx.translate(z.x - c * 8, z.y - s * 8);
+  ctx.rotate(z.heading);
+  const sc = 0.8 + 0.45 * tuckA;  // covers her head and front half; eyes and nose peek out
+  ctx.scale(sc, sc);
+  ctx.drawImage(sp.c, -sp.w / 2, -sp.h / 2, sp.w, sp.h);
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 // ---------- Zoe ----------
@@ -253,6 +382,7 @@ function drawZoe(ctx, game, dt) {
   pose.odo = z.odo; pose.extra = z.extra;
   pose.lunge = z.isLunging() ? 1 : 0;
   pose.stunned = z.isStunned();
+  pose.zoom = z.zoomT > 0;
   rig.update(pose, dt);
   // gentle blink while she can't be hit again
   if (z.invulnT > 0 && !pose.stunned && Math.floor(z.invulnT * 10) % 2 === 0) ctx.globalAlpha = 0.55;
@@ -382,16 +512,22 @@ function drawTouchControls(ctx, input, game) {
 }
 
 // ---------- cards on torn paper ----------
-function placeCard(ctx, card, cy) {
-  ctx.fillStyle = 'rgba(52,50,78,0.28)';
-  ctx.fillRect(0, 0, W, H);
+function placeCard(ctx, card, cy, dim = true) {
+  if (dim) dimScreen(ctx, 1);
   const x = Math.round(W / 2 - card.w / 2), y = Math.round(cy - card.h / 2);
   ctx.drawImage(card.c, x, y, card.w, card.h);
   return { x: x + card.pad, y: y + card.pad, w: card.w - card.pad * 2, h: card.h - card.pad * 2 };
 }
 
-function drawCard(ctx, card, title, lines) {
-  const b = placeCard(ctx, card, H / 2);
+function dimScreen(ctx, a) {
+  ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(52,50,78,0.28)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+}
+
+function drawCard(ctx, card, title, lines, cy = H / 2, dim = true) {
+  const b = placeCard(ctx, card, cy, dim);
   ctx.textAlign = 'center';
   inkText(ctx, title, W / 2, b.y + 62, 34, P.rope, null);
   for (let i = 0; i < lines.length; i++) inkText(ctx, lines[i], W / 2, b.y + 108 + i * 26, 17, P.ink, null, 'normal');
@@ -437,10 +573,112 @@ function drawTitle(ctx, dt) {
   ctx.globalAlpha = 1;
 }
 
-function drawGameOver(ctx, game) {
-  const lines = ['Score ' + game.score, (game.newBest ? 'New best! ' : 'Best ') + game.best, ''];
+// ---------- game over: Zoe flops into a nap pose, then the card slides in ----------
+const NAP_CAPTION = { belly: '(belly-up flop)', donut: '(donut curl)', loaf: '(bread loaf)' };
+const NAP_SHAPE = {          // spacing between joints, bend per joint, heading
+  belly: [6, 0.13, -2.5],
+  donut: [6, 0.52, -0.6],
+  loaf: [2.6, 0, -0.35],
+};
+const NJ = CONFIG.SEG_COUNT + 1;
+const nap = {
+  sx: new Float32Array(NJ), sy: new Float32Array(NJ), sh: 0,   // where she was (local, scale 1)
+  tx: new Float32Array(NJ), ty: new Float32Array(NJ), th: 0,   // the sleeping pose (local)
+  cx: 0, cy: 0, cardY: H / 2, landed: false,
+  pose: { x: 0, y: 0, heading: 0, segX: new Float32Array(CONFIG.SEG_COUNT), segY: new Float32Array(CONFIG.SEG_COUNT), n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false, zoom: false, nap: '' },
+};
+
+function startNap(game) {
+  const z = game.zoe;
+  // Build the sleeping pose as a chain from the head, then centre it.
+  const [sp, bend, h] = NAP_SHAPE[game.napPose] || NAP_SHAPE.donut;
+  nap.th = h;
+  let x = 0, y = 0, mxs = 0, mys = 0;
+  for (let j = 0; j < NJ; j++) {
+    if (j > 0) {
+      const a = h + Math.PI + bend * j;
+      x += Math.cos(a) * sp; y += Math.sin(a) * sp;
+    }
+    nap.tx[j] = x; nap.ty[j] = y;
+    mxs += x; mys += y;
+  }
+  for (let j = 0; j < NJ; j++) { nap.tx[j] -= mxs / NJ; nap.ty[j] -= mys / NJ; }
+
+  // Nap in her half of the room (the card goes in the other half), with the
+  // whole grown-up pose on screen. 22 px pads for ears, tail and paws.
+  const S = CONFIG.NAP_SCALE, pad = 22;
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (let j = 0; j < NJ; j++) {
+    x0 = Math.min(x0, nap.tx[j]); x1 = Math.max(x1, nap.tx[j]);
+    y0 = Math.min(y0, nap.ty[j]); y1 = Math.max(y1, nap.ty[j]);
+  }
+  x0 = (x0 - pad) * S; x1 = (x1 + pad) * S; y0 = (y0 - pad) * S; y1 = (y1 + pad) * S;
+  const fit = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)));
+  const cardH = art.cardOver.h;
+  const mx = z.segX[4], my = z.segY[4];
+  let top, bot;
+  if (my < (CONFIG.HUD_H + H) / 2) {
+    nap.cardY = H - cardH / 2 - 10;
+    top = CONFIG.HUD_H + 4; bot = nap.cardY - cardH / 2;
+  } else {
+    nap.cardY = CONFIG.HUD_H + cardH / 2 + 10;
+    top = nap.cardY + cardH / 2; bot = H - 4;
+  }
+  nap.cx = fit(mx, 4 - x0, W - 4 - x1);
+  nap.cy = fit(my, top - y0, bot - y1);
+
+  nap.sx[0] = z.x - nap.cx; nap.sy[0] = z.y - nap.cy;
+  for (let i = 0; i < CONFIG.SEG_COUNT; i++) { nap.sx[i + 1] = z.segX[i] - nap.cx; nap.sy[i + 1] = z.segY[i] - nap.cy; }
+  nap.sh = z.heading;
+  nap.landed = false;
+  napRig.reset();
+}
+
+function drawGameOver(ctx, game, dt) {
+  const t = game.overT;
+  const flop = CONFIG.NAP_FLOP_TIME;
+  const u = Math.min(1, t / flop);
+  const back = u - 1;
+  const e = 1 + 2.2 * back * back * back + 1.2 * back * back;   // ease-out-back
+  const sc = 1 + (CONFIG.NAP_SCALE - 1) * (1 - (1 - u) * (1 - u));
+  const hop = -Math.sin(Math.PI * u) * 10;
+
+  dimScreen(ctx, Math.min(1, t / flop));
+
+  // pose in local space (centre of the nap spot, scale 1)
+  const p = nap.pose;
+  const lx = (j) => nap.sx[j] + (nap.tx[j] - nap.sx[j]) * e;
+  const ly = (j) => nap.sy[j] + (nap.ty[j] - nap.sy[j]) * e + hop / sc;
+  p.x = lx(0); p.y = ly(0);
+  for (let i = 0; i < CONFIG.SEG_COUNT; i++) { p.segX[i] = lx(i + 1); p.segY[i] = ly(i + 1); }
+  let dh = nap.th - nap.sh;
+  while (dh > Math.PI) dh -= Math.PI * 2;
+  while (dh < -Math.PI) dh += Math.PI * 2;
+  p.heading = nap.sh + dh * e;
+  p.nap = u > 0.45 ? game.napPose : '';
+  napRig.update(p, dt);
+  ctx.save();
+  ctx.translate(nap.cx, nap.cy);
+  ctx.scale(sc, sc);
+  napRig.draw(ctx, p, art, 1 / sc + 0.3);
+  ctx.restore();
+
+  if (u >= 1 && !nap.landed) {
+    nap.landed = true;
+    fx.puff(nap.cx, nap.cy + 8, 7, P.dust, 60, 0.5, 5);
+  }
+
+  if (t >= CONFIG.NAP_CARD_DELAY) drawNapCard(ctx, game, t);
+  drawZs(ctx, p, t - flop, sc);
+}
+
+function drawNapCard(ctx, game, t) {
+  const ct = Math.min(1, (t - CONFIG.NAP_CARD_DELAY) / 0.25);
+  const lines = ['Score ' + game.score, (game.newBest ? 'New best! ' : 'Best ') + game.best, NAP_CAPTION[game.napPose] || ''];
   lines.push(game.canRestart() ? 'tap to restart' : '');
-  drawCard(ctx, art.cardOver, 'Zoe naps', lines);
+  ctx.globalAlpha = ct;
+  drawCard(ctx, art.cardOver, 'Zoe naps', lines, nap.cardY + (1 - ct) * 14, false);
+  ctx.globalAlpha = 1;
 }
 
 function drawDebug(ctx, game, debug) {
@@ -457,4 +695,21 @@ function drawDebug(ctx, game, debug) {
   ctx.font = '11px ' + MONO;
   ctx.textAlign = 'left';
   for (let i = 0; i < rows.length; i++) ctx.fillText(rows[i], 10, H - 54 + i * 14);
+}
+
+// floating "z"s once she's settled (drawn over the card so they never hide)
+function drawZs(ctx, p, zt, sc) {
+  if (zt >= 0) {
+    const hx = nap.cx + p.x * sc, hy = nap.cy + p.y * sc;
+    ctx.textAlign = 'center';
+    for (let k = 0; k < 3; k++) {
+      const raw = zt * 0.5 - k / 3;
+      if (raw < 0) continue;
+      const ph = raw % 1;
+      const a = ph < 0.15 ? ph / 0.15 : 1 - (ph - 0.15) / 0.85;
+      ctx.globalAlpha = a;
+      inkText(ctx, k === 1 ? 'Z' : 'z', hx + 8 + ph * 18 + Math.sin(ph * 6) * 3, hy - 12 - ph * 36, Math.round(11 + ph * 10), P.indigo, P.paper);
+    }
+    ctx.globalAlpha = 1;
+  }
 }

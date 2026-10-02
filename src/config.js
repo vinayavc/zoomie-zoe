@@ -96,6 +96,46 @@ export const CONFIG = {
   BLIP_MAX_CHAIN: 8,
   BLIP_TIME: 0.12,
 
+  // ---- Zoe's extras (Phase 4A) ----
+  // Ball -> zoomies. Not a lasso item: touch it with her head.
+  BALL_FIRST: 6,            // first ball appears this many seconds into the round
+  BALL_GAP_MIN: 7,          // seconds between a ball going away and the next one
+  BALL_GAP_MAX: 12,
+  BALL_LIFETIME: 7,         // a ball stays this long if she doesn't grab it
+  BALL_BLINK: 1.5,          // it blinks for the last N seconds of its life
+  BALL_RADIUS: 8,
+  BALL_MIN_DIST_ZOE: 130,   // spawns at least this far from her head
+  BALL_EDGE: 30,            // keep the ball this far from the walls
+  ZOOMIES_TIME: 4,
+  ZOOMIES_SPEED_MULT: 1.4,  // +40% speed
+  ZOOMIES_TURN_MULT: 1.4,   // faster turning, so the tighter turning circle stays similar
+
+  // Blanket piles -> hiding. Same outlines the bedroom art paints (arena px).
+  BLANKETS: [
+    [[410, 250], [370, 268], [358, 318], [378, 368], [412, 390]],   // right edge
+    [[-14, 488], [32, 508], [58, 554], [46, 612], [-14, 612]],      // bottom-left corner
+  ],
+  DOG_LOST_TIME: 1.0,       // after she leaves a blanket, dogs stay confused this long
+
+  // Bath -> hazard. A soapy puddle that slides across the arena.
+  BATH_START: 15,           // no bath before this many seconds into the round
+  BATH_GAP_MIN: 7,          // seconds between one bath leaving and the next warning
+  BATH_GAP_MAX: 11,
+  BATH_WARN: 1.4,           // wobbling, see-through and harmless before it slides
+  BATH_SPEED: 45,
+  BATH_RX: 30,              // puddle half-width (hit area)
+  BATH_RY: 19,              // puddle half-height (hit area)
+  BATH_MIN_DY_ZOE: 70,      // try to start on a row at least this far from her head
+  BATH_STUN_TIME: 0.5,      // "bath-shocked": a short stun (then the usual HIT_INVULN)
+  BATH_WET_TIME: 3,         // wet leash lasts this long
+  BATH_LEASH_MULT: 0.6,     // wet leash: 40% shorter
+  BATH_DOG_PAD: 14,         // dogs steer away when this close to the puddle's edge
+
+  // Nap pose at game over
+  NAP_FLOP_TIME: 0.6,       // the flop into a sleeping pose
+  NAP_CARD_DELAY: 1.6,      // "Zoe naps" card appears after this; restart guard counts from here
+  NAP_SCALE: 2,             // she grows to this size while she naps, so the pose reads on phones
+
   // ---- Controls ----
   PAD_RADIUS: 50,           // thumb-pad size; dragging further drags the pad along
   PAD_DEADZONE: 8,

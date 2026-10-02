@@ -1,10 +1,15 @@
 // Visual-only juice derived from game state changes:
 // paper confetti when items are caught, and torn scraps when a dog snaps the leash.
+// Phase 4A: ball confetti + dust puffs during zoomies, water drops on a bath
+// splash, sherpa fluff when she dives into a blanket, and a puff when she flops.
 // Reads game state each frame and remembers just enough to spot what changed.
 
 import { P } from './palette.js';
 
 const CONFETTI = [P.sock, P.cheese, P.paper, P.pink, P.apricot, P.sun, P.teal];
+const BALL_COLORS = [P.ball, P.ballSeam, P.ballDark, P.sun];
+const WATER_COLORS = [P.water, P.waterDeep, P.foam, P.wetRopeLight];
+const FLUFF_COLORS = [P.sherpa, P.sherpaLight, P.paper];
 const ITEM_COLORS = { sock: [P.sock, P.paper, P.pink], shoe: [P.shoe, P.sole, P.apricot], cheese: [P.cheese, P.sun, P.paper] };
 
 export class Fx {
@@ -14,10 +19,34 @@ export class Fx {
     this.prevCaptures = 0;
     this.prevItems = [];
     this.prevSnap = [];
+    // soft round puffs (dust, foam)
+    this.puffs = [];
+    for (let i = 0; i < 40; i++) this.puffs.push({ on: false, x: 0, y: 0, vx: 0, vy: 0, t: 0, life: 1, r: 3, color: '#fff' });
+    this.prevZoom = 0;
+    this.prevSplash = 0;
+    this.prevHide = 0;
+    this.dustT = 0;
+  }
+
+  puff(x, y, n, color, speed, life, r) {
+    for (let k = 0; k < n; k++) {
+      const p = this.puffs.find((q) => !q.on);
+      if (!p) return;
+      const a = Math.random() * Math.PI * 2, v = speed * (0.3 + Math.random() * 0.7);
+      p.on = true; p.x = x; p.y = y;
+      p.vx = Math.cos(a) * v; p.vy = Math.sin(a) * v;
+      p.t = 0; p.life = life * (0.7 + Math.random() * 0.6);
+      p.r = r * (0.7 + Math.random() * 0.6);
+      p.color = color;
+    }
   }
 
   reset(game) {
     for (const p of this.parts) p.on = false;
+    for (const p of this.puffs) p.on = false;
+    this.prevZoom = game.zoomCount;
+    this.prevSplash = game.splashCount;
+    this.prevHide = game.hideCount;
     this.prevCaptures = game.captures;
     this._snapshot(game);
   }
@@ -70,7 +99,34 @@ export class Fx {
       this.prevSnap[i] = d.snapFxT;
     }
 
+    const z = game.zoe;
+    if (game.zoomCount > this.prevZoom) this._spawn(game.ball.x, game.ball.y, 14, BALL_COLORS, 120, 0.8);
+    if (game.splashCount > this.prevSplash) {
+      this._spawn(z.x, z.y, 14, WATER_COLORS, 130, 0.7);
+      this.puff(z.x, z.y, 6, P.foam, 40, 0.6, 4);
+    }
+    if (game.hideCount > this.prevHide) this._spawn(z.x, z.y, 8, FLUFF_COLORS, 70, 0.5);
+    this.prevZoom = game.zoomCount;
+    this.prevSplash = game.splashCount;
+    this.prevHide = game.hideCount;
+
     if (dt <= 0) return;
+    // zoomies: little dust clouds kicked up behind her rump
+    if (game.scene === 'play' && game.hitStop <= 0 && z.zoomT > 0 && !z.isStunned()) {
+      this.dustT -= dt;
+      if (this.dustT <= 0) {
+        this.dustT = 0.07;
+        const i = z.segX.length - 1;
+        this.puff(z.segX[i], z.segY[i], 1, P.dust, 25, 0.45, 3.2);
+      }
+    }
+    for (const p of this.puffs) {
+      if (!p.on) continue;
+      p.t += dt;
+      if (p.t >= p.life) { p.on = false; continue; }
+      p.vx *= Math.exp(-4 * dt); p.vy *= Math.exp(-4 * dt);
+      p.x += p.vx * dt; p.y += p.vy * dt;
+    }
     const drag = Math.exp(-3.2 * dt);
     for (const p of this.parts) {
       if (!p.on) continue;
@@ -84,6 +140,16 @@ export class Fx {
   }
 
   draw(ctx) {
+    for (const p of this.puffs) {
+      if (!p.on) continue;
+      const f = p.t / p.life;
+      const r = p.r * (1 + f * 1.4);
+      ctx.globalAlpha = 0.75 * (1 - f);
+      ctx.fillStyle = P.shadowSoft;
+      ctx.beginPath(); ctx.arc(p.x + 0.8, p.y + 1.2, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+    }
     for (const p of this.parts) {
       if (!p.on) continue;
       const f = p.t / p.life;

@@ -9,6 +9,9 @@ import { Zoe } from './zoe.js';
 import { Leash } from './leash.js';
 import { Items } from './items.js';
 import { makeDog, updateDog, dogTouchesZoe } from './dogs.js';
+import { Ball, Bath, blanketAt } from './extras.js';
+
+const NAP_POSES = ['belly', 'donut', 'loaf'];
 
 export class Game {
   constructor(input) {
@@ -17,6 +20,9 @@ export class Game {
     this.leash = new Leash(this.zoe.trail.cap);
     this.items = new Items();
     this.dogs = [];
+    this.ball = new Ball();
+    this.bath = new Bath();
+    this.napPose = 'donut';
     this.scene = 'title'; // 'title' | 'play' | 'over'
     this.paused = false;
     this.best = 0;
@@ -42,6 +48,10 @@ export class Game {
     this.chain = 0;
     this.lastCaptureT = -999;
     this.cheeseT = 0;
+    this.wetT = 0;        // bath: wet, shorter leash
+    this.zoomCount = 0;   // event counters (the renderer diffs these for effects)
+    this.splashCount = 0;
+    this.hideCount = 0;
     this.hitStop = 0;
     this.captures = 0; // loops that caught something
     this.closes = 0;   // all loop closes, including empty ones
@@ -58,6 +68,8 @@ export class Game {
     this.dogs.length = 0;
     for (let i = 0; i < CONFIG.DOG_START; i++) this.dogs.push(makeDog(this.zoe));
     this.items.reset(this.zoe, this.dogs);
+    this.ball.reset();
+    this.bath.reset();
     this.input.clear();
     this.input.enabled = true;
     this.newBest = false;
@@ -66,8 +78,9 @@ export class Game {
     sfx.yip();
   }
 
+  // The guard starts when the "Zoe naps" card appears (after her nap flop).
   canRestart() {
-    return this.scene === 'over' && this.overT >= CONFIG.RESTART_GUARD;
+    return this.scene === 'over' && this.overT >= CONFIG.NAP_CARD_DELAY + CONFIG.RESTART_GUARD;
   }
 
   pause() {
@@ -89,12 +102,14 @@ export class Game {
     this.timeLeft -= dt;
     sfx.countdown(this.timeLeft, dt);
     if (this.cheeseT > 0) this.cheeseT -= dt;
+    if (this.wetT > 0) this.wetT -= dt;
     if (this.flashT > 0) this.flashT -= dt;
     for (const p of this.popups) if (p.active && (p.t += dt) >= CONFIG.POPUP_TIME) p.active = false;
 
     const zoe = this.zoe;
     const leash = this.leash;
-    leash.length = CONFIG.LEASH_LENGTH * (this.cheeseT > 0 ? CONFIG.CHEESE_LEASH_MULT : 1);
+    leash.length = CONFIG.LEASH_LENGTH * (this.cheeseT > 0 ? CONFIG.CHEESE_LEASH_MULT : 1)
+      * (this.wetT > 0 ? CONFIG.BATH_LEASH_MULT : 1);
 
     // Stretch-cinch: lunge, and the leash snaps shut from its end to her collar.
     if (this.input.consumeAction() && zoe.tryStretch()) {
@@ -105,6 +120,7 @@ export class Game {
 
     if (!zoe.isStunned() && leash.detectLoop(zoe)) this._closeLoop();
 
+    this._updateExtras(dt);
     this._updateDogs(dt);
     this.items.update(dt, zoe, this.dogs);
     this._updateCinchPreview();
@@ -174,7 +190,7 @@ export class Game {
     while (this.dogs.length < want) this.dogs.push(makeDog(zoe));
 
     for (const dog of this.dogs) {
-      updateDog(dog, dt, zoe);
+      updateDog(dog, dt, zoe, this.bath);
 
       if (zoe.invulnT <= 0 && dogTouchesZoe(dog, zoe)) {
         zoe.stun();
@@ -193,6 +209,36 @@ export class Game {
     }
   }
 
+  // Ball -> zoomies, blanket piles -> hiding, bath -> stun + wet leash.
+  _updateExtras(dt) {
+    const zoe = this.zoe;
+
+    if (this.ball.update(dt, zoe, this.bath)) sfx.bounce();
+    if (this.ball.touches(zoe)) {
+      this.ball.take();
+      zoe.startZoomies();
+      this.zoomCount++;
+      this._popup(zoe.x, zoe.y - 16, 'zoomies!', false);
+      sfx.zoomies();
+    }
+
+    const hidden = blanketAt(zoe.x, zoe.y) >= 0;
+    if (hidden) {
+      if (!zoe.hidden) { this.hideCount++; sfx.rustle(); }
+      for (const dog of this.dogs) dog.lostT = CONFIG.DOG_LOST_TIME;
+    }
+    zoe.hidden = hidden;
+
+    if (this.bath.update(dt, zoe) === 'warn') sfx.bubbles();
+    if (this.bath.isLive() && zoe.invulnT <= 0 && this.bath.contains(zoe.x, zoe.y, CONFIG.HEAD_RADIUS)) {
+      zoe.stun(CONFIG.BATH_STUN_TIME);
+      this.wetT = CONFIG.BATH_WET_TIME;
+      this.splashCount++;
+      this._popup(zoe.x, zoe.y - 16, 'splash!', false);
+      sfx.splash();
+    }
+  }
+
   _endRound() {
     this.timeLeft = 0;
     this.scene = 'over';
@@ -200,7 +246,12 @@ export class Game {
     this.downSinceOver = false;
     this.input.enabled = false;
     this.input.clear();
-    sfx.sigh();
+    // She flops into a random sleeping pose (never the same one twice in a row).
+    let pick = NAP_POSES[Math.floor(Math.random() * NAP_POSES.length)];
+    if (pick === this.napPose) pick = NAP_POSES[(NAP_POSES.indexOf(pick) + 1 + Math.floor(Math.random() * 2)) % NAP_POSES.length];
+    this.napPose = pick;
+    sfx.flop();
+    sfx.sigh(0.35);
     if (this.score > this.best) {
       this.best = this.score;
       this.newBest = true;

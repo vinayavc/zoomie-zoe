@@ -54,6 +54,19 @@ export const P = {
   ropeCheese: '#D99A2B',
   ropeCheeseLight: '#F6D47E',
   thread: '#FBF6EC',
+
+  // Phase 4A extras
+  ball: '#E2603A',         // her red-orange ball
+  ballDark: '#B2432A',
+  ballSeam: '#F6EAD5',
+  water: '#C4E0EA',        // soapy bath puddle
+  waterDeep: '#86B3C8',
+  waterInk: '#4E6A82',
+  foam: '#FFFFFF',
+  wetRope: '#6F8FA3',      // leash after a bath
+  wetRopeLight: '#B4D0DC',
+  dust: '#E6DCCB',         // zoomies dust puffs
+  pawPad: '#D99A92',
 };
 
 // Warm, handwritten-feeling system fonts. No web fonts are loaded.

@@ -19,7 +19,16 @@ const game = new Game(input);
 const debug = { on: new URLSearchParams(location.search).has('debug'), fps: 60 };
 
 // Handy for live tuning from the browser console: doxie.config.ZOE_SPEED = 170
-globalThis.doxie = { ...globalThis.doxie, config: CONFIG, game, isExtension };
+globalThis.doxie = {
+  ...globalThis.doxie,
+  config: CONFIG,
+  game,
+  isExtension,
+  // Test helpers for the Phase 4A extras (console only):
+  spawnBall: () => game.ball.spawn(game.zoe, game.bath),
+  spawnBath: () => game.bath.spawn(game.zoe),
+  endRound: () => { if (game.scene === 'play') game.timeLeft = 0.01; },
+};
 
 // "Tap to play" / restart / resume. Audio is unlocked inside the gesture.
 function proceed() {

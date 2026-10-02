@@ -28,6 +28,8 @@ export class Zoe {
     this.cooldown = 0;
     this.stunT = 0;
     this.invulnT = 0;
+    this.zoomT = 0;      // zoomies time left (ball)
+    this.hidden = false; // head is inside a blanket pile (set by the round)
 
     // Lay a straight path behind her so the body starts stretched out.
     this.trail.clear();
@@ -45,6 +47,8 @@ export class Zoe {
 
   isLunging() { return this.lungeT > 0; }
   isStunned() { return this.stunT > 0; }
+  isZooming() { return this.zoomT > 0; }
+  startZoomies() { this.zoomT = CONFIG.ZOOMIES_TIME; }
   stretchReady() { return this.cooldown <= 0; }
 
   tryStretch() {
@@ -54,8 +58,8 @@ export class Zoe {
     return true;
   }
 
-  stun() {
-    this.stunT = CONFIG.STUN_TIME;
+  stun(time = CONFIG.STUN_TIME) {
+    this.stunT = time;
     this.invulnT = CONFIG.HIT_INVULN;
     this.lungeT = 0;
   }
@@ -66,6 +70,8 @@ export class Zoe {
     this.prevY = this.y;
     if (this.cooldown > 0) this.cooldown -= dt;
     if (this.invulnT > 0) this.invulnT -= dt;
+    if (this.zoomT > 0) this.zoomT -= dt;
+    const zoom = this.zoomT > 0;
 
     // Rear catches up after a lunge.
     if (this.lungeT <= 0 && this.extra > 0) {
@@ -79,10 +85,10 @@ export class Zoe {
     }
 
     if (!Number.isNaN(desiredAngle)) {
-      this.heading = turnToward(this.heading, desiredAngle, CONFIG.ZOE_TURN_RATE * dt);
+      this.heading = turnToward(this.heading, desiredAngle, CONFIG.ZOE_TURN_RATE * (zoom ? CONFIG.ZOOMIES_TURN_MULT : 1) * dt);
     }
 
-    let speed = CONFIG.ZOE_SPEED;
+    let speed = CONFIG.ZOE_SPEED * (zoom ? CONFIG.ZOOMIES_SPEED_MULT : 1);
     if (this.lungeT > 0) {
       const lunge = CONFIG.STRETCH_DISTANCE / CONFIG.STRETCH_TIME;
       speed += lunge;

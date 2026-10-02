@@ -353,7 +353,8 @@ function countdown(timeLeft, dt) {
 }
 
 // Round over: a sleepy yawn-sigh, "aah-ooo". ~1 s
-const sigh = sound((k, t) => {
+const sigh = sound((k, t0, delay = 0) => {
+  const t = t0 + delay;
   const d = rnd(0.04);
   const vowel = k.add(ctx.createBiquadFilter());
   vowel.type = 'lowpass';
@@ -367,10 +368,69 @@ const sigh = sound((k, t) => {
   hiss(k, t, 0.9, 0.07, 'bandpass', 900, 500, 0.8, master, 0.2);
 });
 
+// ---------------------------------------------------------------- Phase 4A extras
+
+// Ball appears: a rubbery "boing" so she notices it. ~0.3 s
+const bounce = sound((k, t) => {
+  const d = rnd(0.05);
+  [[0, 1], [0.13, 0.8]].forEach(([off, amp]) => {
+    const s = t + off;
+    const o = voice(k, 'sine', s, 0.14, 0.3 * amp, [[220 * d, 0], [520 * d, 0.05], [380 * d, 0.14]], master, 0.004);
+    lfo(k, s, s + 0.14, 18, 25, [o.frequency]);
+  });
+});
+
+// Zoomies: a happy rising "arf-arf!" over a whoosh that speeds up. ~0.5 s
+const zoomies = sound((k, t) => {
+  hiss(k, t, 0.5, 0.18, 'bandpass', 400 * rnd(0.1), 3200, 1.4, master, 0.12);
+  const lp = filter(k, 'lowpass', 2200, 1, master);
+  [[0, 1], [0.16, 1.2]].forEach(([off, up]) => {
+    const s = t + off;
+    const d = rnd(0.05) * up;
+    const c = [[520 * d, 0], [820 * d, 0.03], [640 * d, 0.07], [450 * d, 0.13]];
+    voice(k, 'sawtooth', s, 0.13, 0.3, c, lp, 0.008);
+    voice(k, 'triangle', s, 0.13, 0.22, c, master, 0.008);
+  });
+});
+
+// Hiding in a blanket: a soft fabric rustle. ~0.25 s
+const rustle = sound((k, t) => {
+  hiss(k, t, 0.12, 0.16, 'bandpass', 1800 * rnd(0.2), 900, 0.8, master, 0.03);
+  hiss(k, t + 0.09, 0.16, 0.12, 'bandpass', 1300 * rnd(0.2), 700, 0.8, master, 0.04);
+});
+
+// One bubble: a quick upward sine "bloop".
+function bloop(k, s, hz, peak) {
+  voice(k, 'sine', s, 0.07, peak, [[hz, 0], [hz * 2.2, 0.06]], master, 0.004);
+}
+
+// Bath warning: a little run of rising bubbles, "blub-blub-blub". ~0.4 s
+const bubbles = sound((k, t) => {
+  for (let i = 0; i < 4; i++) bloop(k, t + i * 0.09 + Math.random() * 0.02, (380 + i * 90) * rnd(0.15), 0.22);
+});
+
+// Bath-shocked: a watery splash (noise falling through a lowpass) plus bubbles. ~0.6 s
+const splash = sound((k, t) => {
+  hiss(k, t, 0.45, 0.4, 'lowpass', 5000, 500, 0.9, master, 0.006);
+  hiss(k, t, 0.18, 0.2, 'highpass', 3000, 1800, 0.7, master, 0.003);
+  voice(k, 'sine', t, 0.12, 0.35, [[260, 0], [110, 0.11]], master, 0.003); // the plop
+  for (let i = 0; i < 5; i++) bloop(k, t + 0.12 + i * 0.07 + Math.random() * 0.03, (500 + Math.random() * 500), 0.16);
+});
+
+// Nap flop: a soft paper-and-fur thud. ~0.2 s
+const flop = sound((k, t) => {
+  voice(k, 'sine', t, 0.18, 0.4, [[140, 0], [60, 0.17]], master, 0.004);
+  hiss(k, t, 0.12, 0.14, 'lowpass', 900, 250, 0.7, master, 0.004);
+});
+
 // For debugging from the console: doxie.sfx.state() -> 'running' | 'suspended' | 'interrupted' | 'none'
 const state = () => (ctx ? ctx.state : 'none');
 
-export const sfx = { yip, cinch, pop, arf, caught, boof, twang, squeak, tick, countdown, sigh, isMuted, toggleMute, state };
+export const sfx = {
+  yip, cinch, pop, arf, caught, boof, twang, squeak, tick, countdown, sigh,
+  bounce, zoomies, rustle, bubbles, splash, flop,
+  isMuted, toggleMute, state,
+};
 
 // Console audition hook: doxie.sfx.<name>() (main.js merges into this object).
 (globalThis.doxie ||= {}).sfx = sfx;
