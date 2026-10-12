@@ -1,7 +1,8 @@
 // One control scheme for every device: a steering direction + one action.
 //   Touch:    floating thumb-pad (follows the thumb past its edge; it can start
 //             anywhere, including the band below the arena);
-//             action = second finger tap or the on-screen CINCH button
+//             action = double-tap anywhere (issue #2), a second finger tap,
+//             or the on-screen CINCH button
 //   Mouse:    Zoe steers toward the cursor; action = click
 //   Keyboard: arrows / WASD point Zoe toward that side of the screen (two keys
 //             = a diagonal); holding keeps her running that way;
@@ -39,8 +40,16 @@ export class Input {
     this.lastDir = 'right';      // most recent arrow pressed (breaks ties for diagonals)
     this.loopSign = 0;
     this.looping = false;
+    // Double-tap to cinch (issue #2). Only the steering finger is watched: each
+    // touch still starts the thumb-pad at once, so steering never waits.
+    this.tap = { id: -1, t: 0, x: 0, y: 0, ok: false }; // the touch being watched
+    this.lastTap = { t: -1e9, x: 0, y: 0 };              // when and where the last quick tap ended
+    this.notReadyAt = -1e9;      // performance.now() of a touch cinch tried during the cooldown (render cue)
+    this.notReadyX = 0;          // ...where (arena px): the second tap or finger, or the CINCH button
+    this.notReadyY = 0;
 
     // Hooks set by main.js
+    this.canCinch = () => true;  // false during the cinch cooldown (or a stun)
     this.onPointerDown = () => {};
     this.onPointerUp = () => {};
     this.onDebugKey = () => {};
@@ -79,6 +88,8 @@ export class Input {
     this.shift = false;
     this.loopSign = 0;
     this.looping = false;
+    this.tap.id = -1;
+    this.lastTap.t = -1e9;
   }
 
   consumeAction() {
@@ -151,13 +162,17 @@ export class Input {
         if (this._inButton(p.x, p.y) && this.buttonId === -1) {
           this.buttonId = e.pointerId;
           this.buttonDown = true;
-          this.actionQueued = true;
+          this._touchCinch(FRAME.cinchX, FRAME.cinchY);
         } else if (!this.pad.active) {
           const pad = this.pad;
           pad.active = true; pad.id = e.pointerId;
           pad.cx = pad.kx = p.x; pad.cy = pad.ky = p.y;
+          const t = this.tap;
+          t.id = e.pointerId; t.t = performance.now(); t.x = e.clientX; t.y = e.clientY; t.ok = true;
         } else {
-          this.actionQueued = true; // second finger = stretch
+          this._touchCinch(p.x, p.y); // second finger = stretch
+          this.tap.ok = false;      // ...and the steering finger's touch is no longer a tap
+          this.lastTap.t = -1e9;
         }
       }
     }
@@ -175,6 +190,8 @@ export class Input {
     const pad = this.pad;
     if (pad.active && e.pointerId === pad.id) {
       if (e.cancelable) e.preventDefault();
+      const t = this.tap;
+      if (t.ok && e.pointerId === t.id && Math.hypot(e.clientX - t.x, e.clientY - t.y) > CONFIG.TAP_MAX_MOVE) t.ok = false;
       pad.kx = p.x; pad.ky = p.y;
       // Dragging past the rim pulls the whole pad along with the thumb.
       const dx = pad.kx - pad.cx, dy = pad.ky - pad.cy;
@@ -187,6 +204,7 @@ export class Input {
   }
 
   _up(e) {
+    if (e.pointerId === this.tap.id) this._tapEnded(e);
     if (e.pointerId === this.pad.id) {
       this.pad.active = false;
       this.pad.id = -1;
@@ -200,6 +218,34 @@ export class Input {
       this.uiUp(e, p.x, p.y);
       this.onPointerUp(e);
     }
+  }
+
+  // The steering finger lifted. A quick, still touch is a tap; two taps close
+  // together in time and place cinch, the same as the CINCH button.
+  _tapEnded(e) {
+    const t = this.tap, last = this.lastTap;
+    t.id = -1;
+    const now = performance.now();
+    const isTap = t.ok && e.type === 'pointerup' && this.enabled
+      && now - t.t < CONFIG.TAP_MAX_MS
+      && Math.hypot(e.clientX - t.x, e.clientY - t.y) <= CONFIG.TAP_MAX_MOVE;
+    if (!isTap) { last.t = -1e9; return; }
+    if (t.t - last.t <= CONFIG.DOUBLE_TAP_MS
+      && Math.hypot(t.x - last.x, t.y - last.y) <= CONFIG.DOUBLE_TAP_DIST) {
+      last.t = -1e9; // a third tap starts a new pair
+      const p = this.view.toArena(e.clientX, e.clientY, this._p);
+      this._touchCinch(p.x, p.y);
+      return;
+    }
+    last.t = now; last.x = t.x; last.y = t.y;
+  }
+
+  // A cinch from touch. During the cooldown (or a stun) it only shows the
+  // "not ready" cue at (x, y), where the finger was.
+  _touchCinch(x, y) {
+    if (this.canCinch()) { this.actionQueued = true; return; }
+    this.notReadyAt = performance.now();
+    this.notReadyX = x; this.notReadyY = y;
   }
 
   _key(e, down) {

@@ -178,4 +178,11 @@ export const CONFIG = {
   BAND_MIN_SCALE: 0.88,     // use the bands only if the arena keeps at least this share of its size
   CTRL_CINCH_R: 40,         // CINCH button radius when it sits in the band
   SNAP_WARN_DIST: 18,       // leash trembles where a critter is this much closer than a snap
+
+  // ---- Double-tap to cinch (issue #2) ----
+  TAP_MAX_MS: 250,          // a touch counts as a tap only if it is down for less than this...
+  TAP_MAX_MOVE: 12,         // ...and moves less than this (CSS px), so a steering drag never counts
+  DOUBLE_TAP_MS: 300,       // the second tap must start within this long after the first one ends
+  DOUBLE_TAP_DIST: 60,      // ...and land within this far of it (CSS px)
+  NOT_READY_CUE: 0.5,       // seconds the CINCH button wiggles after a double-tap during the cooldown
 };

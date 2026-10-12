@@ -51,6 +51,8 @@ input.uiKey = (e) => menu.key(e);
 input.onPointerDown = () => { unlockAudio(); };  // mouse: pointerdown is the gesture that counts
 input.onPointerUp = () => { unlockAudio(); };    // touch: pointerup is the gesture that counts
 input.onDebugKey = () => { debug.on = !debug.on; };
+// Double-tap to cinch (issue #2): during the cooldown it only shows a "not ready" cue.
+input.canCinch = () => game.zoe.stretchReady() && !game.zoe.isStunned();
 window.addEventListener('touchend', unlockAudio, { passive: true });
 
 // Screen-reader live region: "Round over: score N, best M" (Phase 4C).
