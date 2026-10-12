@@ -15,9 +15,9 @@ name: Publish to GitHub Pages
 on:
   # Run by hand: Actions tab -> "Publish to GitHub Pages" -> Run workflow.
   workflow_dispatch:
-  # enable at go-live: uncomment the next two lines so every push to main publishes.
-  # push:
-  #   branches: [main]
+  # Every push to main publishes (enabled at go-live, Oct 12, 2026).
+  push:
+    branches: [main]
 
 # Least privilege: read the repo, write Pages, and get an OIDC token for the deploy.
 permissions:

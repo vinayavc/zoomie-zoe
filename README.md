@@ -2,7 +2,7 @@
 
 *a leash-lasso sock heist*
 
-**Play it here: https://vinayavc.github.io/zoomie-zoe/**
+**[Play now](https://vinayavc.github.io/zoomie-zoe/)**: https://vinayavc.github.io/zoomie-zoe/
 
 Zoe is a mini long-haired dachshund with a very long body, very floppy ears and a habit of stealing socks. Steer her around the room while her leash trails behind her. Swing the leash in a loop around socks, shoes and cheese, then **cinch** it shut to scoop up everything inside. Bigger loops and quick chains score more.
 
@@ -14,9 +14,11 @@ It works on phones, tablets and laptops, with no sign-up, no ads and no tracking
 
 | | Steer Zoe | Cinch the loop | Pause | Sound |
 |---|---|---|---|---|
-| **Keyboard** | Arrow keys or W A S D (Zoe heads toward that side) | Space | Esc or P | M |
+| **Touch** | Hold and drag anywhere to steer (the pad below the room is the comfy spot) | Tap the **CINCH** button, or tap with a second finger | Pause button | Speaker button |
 | **Mouse** | Move the mouse; Zoe follows it | Click | Pause button | Speaker button |
-| **Touch** | Drag the thumb-pad | Tap the CINCH button, or tap with a second finger | Pause button | Speaker button |
+| **Keyboard** | Arrow keys or W A S D (Zoe heads toward that side). Hold **Shift** + an arrow to curve her into a loop | Space | Esc or P | M |
+
+**Starting and restarting:** Space (or the Play button) starts a round. When a round ends, press **Play again**, Space or Enter. Taps on empty space don't restart, so a stray swipe won't throw away your score card.
 
 **The cinch:** Zoe's leash follows the path she ran. Circle around some items so the leash makes a loop, then cinch. Everything inside the loop is hers. Keep other dogs off the leash while you're circling.
 
@@ -59,7 +61,18 @@ The game lives in `src/`. The workflow in `.github/workflows/pages.yml` publishe
 
 ## Screenshots
 
-*Coming soon.* They'll live in [`store/screenshots/`](store/screenshots/).
+Phone screenshots, one per theme (from [`store/screenshots/`](store/screenshots/)):
+
+<table>
+  <tr>
+    <td align="center"><img src="store/screenshots/bedroom-phone.png" width="200" alt="Bedroom: Zoe loops her leash around two shoes while dogs roam the bedspread"><br>Bedroom</td>
+    <td align="center"><img src="store/screenshots/halloween-phone.png" width="200" alt="Spooky Night: Zoe in a witch hat circles candy as ghosts drift by"><br>Spooky Night</td>
+    <td align="center"><img src="store/screenshots/christmas-phone.png" width="200" alt="Cozy Christmas: Zoe in a Santa hat lassos ornaments near the rug"><br>Cozy Christmas</td>
+    <td align="center"><img src="store/screenshots/spring-phone.png" width="200" alt="Spring Garden: Zoe circles two carrots on the lawn while bunnies hop"><br>Spring Garden</td>
+  </tr>
+</table>
+
+<img src="store/screenshots/title-phone.png" width="200" alt="Title card: Zoomie Zoe, a leash-lasso sock heist, with Play, How to play and the four theme chips">
 
 ## Credits
 

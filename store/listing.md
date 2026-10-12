@@ -39,7 +39,7 @@ FEATURES
 • Plays right in the toolbar popup. No sign-up, no ads, no tracking
 
 CONTROLS
-• Steer: drag the thumb-pad, move the mouse, or use the ← → (or A / D) keys. Hold a key to keep circling
+• Steer: hold and drag on the pad, move the mouse, or use the arrow keys (or WASD). Hold Shift + an arrow to loop
 • Cinch: tap the CINCH button or a second finger, click, or press Space
 • Pause: the pause button, Esc or P
 • Sound: the speaker button or the M key
@@ -62,7 +62,7 @@ English
 |---|---|---|
 | Store icon, 128×128 PNG (96×96 art + 16 px transparent padding) | `src/icons/128.png` | Done |
 | Small promo tile, 440×280 (required) | `store/promo-440x280.png` | Done |
-| Screenshots, 1280×800 or 640×400, square corners, full bleed, 1 to 5 of them (5 recommended) | `store/screenshots/` | **TODO after Phase 4B.** Take them from the real game once menus and polish are final. The popup is 400×600, so place it on a 1280×800 frame with the bedroom art or a plain paper background. |
+| Screenshots, 1280×800 or 640×400, square corners, full bleed, 1 to 5 of them (5 recommended) | `store/screenshots/` | **Partly done (Oct 12, 2026).** The store is shelved, so only phone shots exist: `bedroom-phone.png`, `halloween-phone.png`, `christmas-phone.png`, `spring-phone.png` and `title-phone.png` (750×1624, 375×812 at 2×, touch layout). They are not store-sized. If the store comes back, take 1280×800 shots of the popup layout (400×600 on a paper or bedroom frame). |
 | Marquee promo tile, 1400×560 | — | Optional. Only needed if the store features the item. Skip it. |
 | YouTube video | — | Optional. Skip it. |
 
