@@ -1,5 +1,29 @@
 # Handoff: pick up here (updated Oct 12, 2026)
 
+## Tomorrow: pick up here (written Oct 12, 2026)
+**Live and shared:** https://vinayavc.github.io/zoomie-zoe/ (`main`). Vinny is sharing it with friends today, and GoatCounter is counting visits and installs.
+
+**Shelved, but kept open on purpose:**
+- **Issue #2** "Phones: double-tap to cinch…", https://github.com/vinayavc/zoomie-zoe/issues/2
+- **PR #3** "Double-tap to cinch on phones" (branch `issue-2-double-tap-cinch`), https://github.com/vinayavc/zoomie-zoe/pull/3
+  - Built, playtested in the emulator, and follow-up fixes done (the "not ready" cue at the thumb, the pad hint following the last input).
+  - **Only step left: Vinny tries it on his real phone, then merges or asks for tuning.**
+  - The tunables are at the end of `src/config.js`: `TAP_MAX_MS` 250, `TAP_MAX_MOVE` 12, `DOUBLE_TAP_MS` 300, `DOUBLE_TAP_DIST` 60.
+  - Notes: `docs/issue-2-notes.md`. Playtest: `docs/issue-2-playtest.md`.
+
+**How to test the branch on the phone:** see **`docs/testing-on-your-phone.md`**.
+- A: same Wi-Fi
+- B: USB cable plus Chrome port forwarding (Android, most reliable)
+- C: merge and revert if needed
+- The Mac's Wi-Fi looked like it might block phone-to-Mac traffic on Oct 12 (address `10.248.x`), so **try B first**.
+
+**To resume with Claude:** "Read docs/HANDOFF.md and help me test PR #3 on my phone."
+
+**Local state:** this folder is on `main`, matching live. No servers are running.
+
+---
+
+
 ## LAUNCHED
 **Live: https://vinayavc.github.io/zoomie-zoe/.** Every push to `main` publishes automatically (`.github/workflows/pages.yml`).
 
