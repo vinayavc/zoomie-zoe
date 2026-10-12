@@ -1,6 +1,7 @@
 // One control scheme for every device: a steering direction + one action.
-//   Touch:    floating thumb-pad (follows the thumb past its edge);
-//             action = second finger tap or the on-screen button
+//   Touch:    floating thumb-pad (follows the thumb past its edge; it can start
+//             anywhere, including the band below the arena);
+//             action = second finger tap or the on-screen CINCH button
 //   Mouse:    Zoe steers toward the cursor; action = click
 //   Keyboard: arrows / WASD point Zoe toward that side of the screen (two keys
 //             = a diagonal); holding keeps her running that way;
@@ -10,6 +11,7 @@
 
 import { CONFIG } from '../config.js';
 import { wrapAngle } from './geom.js';
+import { FRAME } from './layout.js';
 
 // Keyboard steering (Revision 3): each key points her toward that side of the screen.
 const KEY_DIRS = {
@@ -123,8 +125,9 @@ export class Input {
   }
 
   _inButton(x, y) {
-    const dx = x - CONFIG.ACTION_BTN_X, dy = y - CONFIG.ACTION_BTN_Y;
-    const r = CONFIG.ACTION_BTN_R + 6; // slightly generous hit area
+    // The CINCH button sits in the touch band below the arena when there is one (layout.js).
+    const dx = x - FRAME.cinchX, dy = y - FRAME.cinchY;
+    const r = FRAME.cinchR + 6; // slightly generous hit area
     return dx * dx + dy * dy <= r * r;
   }
 

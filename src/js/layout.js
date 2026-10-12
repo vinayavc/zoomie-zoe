@@ -1,17 +1,76 @@
 // Where the paper cards and their buttons sit, in arena pixels (400 x 600).
 // Shared by the baker (card sizes), the menu (hit tests) and the renderer
 // (drawing), so a button is always drawn exactly where it can be tapped.
+//
+// Phase 4C: the canvas fills the whole screen and the 400 x 600 arena sits
+// inside it. Everything still uses arena pixels; the bands around the arena
+// just have y < 0 (HUD band) or y > 600 (thumb-pad + CINCH band), and the
+// sides have x < 0 or x > 400. The arena's walls and bounds never change.
 
 import { CONFIG } from '../config.js';
 
 const W = CONFIG.ARENA_W, H = CONFIG.ARENA_H;
 
+// The live screen layout, rebuilt by fitFrame() on every resize (view.js).
+//   banded: the HUD sits in its own band above the arena (else on the paper
+//           strip at the top of the arena, as before)
+//   ctrlH:  height of the touch band below the arena (0 = none; CINCH sits in the arena)
+//   vx0..vy1: the visible screen edges, in arena px
+//   hudY: centre line of the HUD's top row; cinchX/Y/R: the touch CINCH button
+export const FRAME = {
+  rev: 0, banded: false, touch: false, ctrlH: 0, scale: 1,
+  ox: 0, oy: 0, vx0: 0, vy0: 0, vx1: W, vy1: H,
+  hudY: CONFIG.HUD_BTN_Y,
+  cinchX: CONFIG.ACTION_BTN_X, cinchY: CONFIG.ACTION_BTN_Y, cinchR: CONFIG.ACTION_BTN_R,
+};
+
+// Fit the arena (plus bands, when they fit) into a cssW x cssH screen.
+// `pinned` (the extension popup) keeps the classic 400 x 600 layout.
+export function fitFrame(cssW, cssH, touch, pinned) {
+  const s0 = Math.min(cssW / W, cssH / H);
+  let s = s0, banded = false, ctrlH = 0, top = 0;
+  if (!pinned) {
+    const hb = CONFIG.HUD_BAND_H;
+    const need = H + hb + (touch ? CONFIG.CTRL_BAND_MIN : 0);
+    const s1 = Math.min(cssW / W, cssH / need);
+    if (s1 >= CONFIG.BAND_MIN_SCALE * s0) {
+      banded = true;
+      s = s1;
+      const spare = cssH / s - H - hb;
+      ctrlH = touch ? Math.min(CONFIG.CTRL_BAND_MAX, spare) : 0;
+      top = (cssH / s - (hb + H + ctrlH)) / 2 + hb;
+    }
+  }
+  if (!banded) top = (cssH / s - H) / 2;
+  const F = FRAME;
+  F.rev++;
+  F.banded = banded;
+  F.touch = touch;
+  F.ctrlH = ctrlH;
+  F.scale = s;
+  F.ox = Math.round(((cssW / s - W) / 2) * s);   // arena origin, CSS px from the canvas corner
+  F.oy = Math.round(top * s);
+  F.vx0 = -F.ox / s; F.vy0 = -F.oy / s;
+  F.vx1 = F.vx0 + cssW / s; F.vy1 = F.vy0 + cssH / s;
+  F.hudY = banded ? -CONFIG.HUD_BAND_H + 22 : CONFIG.HUD_BTN_Y;
+  if (ctrlH > 0) {
+    F.cinchR = CONFIG.CTRL_CINCH_R;
+    F.cinchX = Math.min(W, F.vx1) - F.cinchR - 22;
+    F.cinchY = H + ctrlH / 2;
+  } else {
+    F.cinchR = CONFIG.ACTION_BTN_R;
+    F.cinchX = CONFIG.ACTION_BTN_X;
+    F.cinchY = CONFIG.ACTION_BTN_Y;
+  }
+  return F;
+}
+
 // w/h = the paper card's inner size; cy = its centre line.
 export const CARDS = {
   title: { w: 324, h: 512, cy: 312 },
   howto: { w: 368, h: 540, cy: 324 },
-  pause: { w: 290, h: 340, cy: H / 2 },
-  over: { w: 290, h: 304 },            // its centre is picked at game over (opposite her nap spot)
+  pause: { w: 290, h: 400, cy: H / 2 },
+  over: { w: 290, h: 304, cy: H - 152 - 12 },   // always at the bottom of the arena; she naps above it
   rotate: { w: 360, h: 420, cy: H / 2 },
 };
 
@@ -29,7 +88,7 @@ function btn(id, label, cx, cy, w, h, kind = 'wide') {
 }
 
 // The buttons of one screen, in keyboard (Tab / arrow) order.
-// `s` = { screen, muted, howtoFirst, overCardY, themes: [ids] }
+// `s` = { screen, muted, howtoFirst, themes: [ids] }
 export function buttonsFor(s) {
   const BH = CONFIG.MENU_BTN_H;
   const sound = s.muted ? 'Sound: off' : 'Sound: on';
@@ -52,10 +111,11 @@ export function buttonsFor(s) {
       btn('resume', 'Resume', W / 2, b.y + 112, 200, BH, 'big'),
       btn('restart', 'Restart', W / 2, b.y + 174, 200, BH),
       btn('sound', sound, W / 2, b.y + 236, 200, BH, 'sound'),
+      btn('quit', 'Quit to title', W / 2, b.y + 298, 200, BH),
     ];
   }
   if (s.screen === 'over') {
-    const b = cardBox('over', s.overCardY);
+    const b = cardBox('over');
     return [
       btn('again', 'Play again', W / 2, b.y + 176, 190, BH - 2, 'big'),
       ...chipRow(s.themes, b.y + CHIP_ROW.over),
@@ -64,8 +124,8 @@ export function buttonsFor(s) {
   if (s.screen === 'play') {
     const r = CONFIG.HUD_BTN_HIT * 2;
     return [
-      btn('mute', 'Sound', CONFIG.MUTE_BTN_X, CONFIG.HUD_BTN_Y, r, r, 'hud'),
-      btn('pause', 'Pause', CONFIG.PAUSE_BTN_X, CONFIG.HUD_BTN_Y, r, r, 'hud'),
+      btn('mute', 'Sound', CONFIG.MUTE_BTN_X, FRAME.hudY, r, r, 'hud'),
+      btn('pause', 'Pause', CONFIG.PAUSE_BTN_X, FRAME.hudY, r, r, 'hud'),
     ];
   }
   return [];

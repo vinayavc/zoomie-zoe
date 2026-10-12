@@ -20,18 +20,30 @@ try {
   // matchMedia missing: keep full motion
 }
 
-// Sideways phone (T1): a touch screen that is wider than tall and short (a
-// phone in landscape) gets a "turn your phone" card and the round pauses.
-// Laptops with touch screens report a fine pointer and are left alone;
-// tablets in landscape are tall enough to skip the card.
-// `touchSeen` is set by main.js once a real touch arrives.
+// Touch phone or tablet? Decided up front (Phase 4C), before any touch happens:
+// a coarse pointer, or no hover plus touch points. Laptops with a touch screen
+// report a fine pointer that can hover, so they count as mouse + keyboard.
+// `touchSeen` is set by main.js once a real touch arrives, as a fallback.
 export const screenShape = { sideways: false, touchSeen: false };
-let coarseMq = null;
-try { coarseMq = window.matchMedia('(pointer: coarse)'); } catch { /* old browser */ }
+let coarseMq = null, noHoverMq = null;
+try {
+  coarseMq = window.matchMedia('(pointer: coarse)');
+  noHoverMq = window.matchMedia('(hover: none)');
+} catch { /* old browser */ }
 
+export function isTouchDevice() {
+  if (isExtension) return false;
+  const coarse = !!(coarseMq && coarseMq.matches);
+  const noHover = !!(noHoverMq && noHoverMq.matches);
+  const points = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+  return coarse || (noHover && points) || screenShape.touchSeen;
+}
+
+// Sideways phone: a touch screen that is wider than tall and short (a phone
+// in landscape) gets a "turn your phone" card; rounds never start or run.
+// Tablets in landscape are tall enough to skip the card.
 export function checkSideways(maxH) {
-  const touch = (coarseMq && coarseMq.matches) || screenShape.touchSeen;
   const w = window.innerWidth, h = window.innerHeight;
-  screenShape.sideways = !isExtension && touch && w > h && h < maxH;
+  screenShape.sideways = !isExtension && isTouchDevice() && w > h && h < maxH;
   return screenShape.sideways;
 }

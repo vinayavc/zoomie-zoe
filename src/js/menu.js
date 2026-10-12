@@ -1,11 +1,12 @@
 // Menus: which paper card is showing, its buttons, keyboard focus, and what
 // each button does. Works the same by tap, click and keyboard:
-//   arrows or Tab / Shift+Tab move the focus, Enter or Space chooses,
+//   arrows or Tab / Shift+Tab move the focus, Enter chooses, Space chooses
+//   (and on the title and game-over cards Space always means Play / Play again),
 //   Esc or P pause and resume, M mutes (handled in audio.js).
 // The title and game-over cards also carry the theme picker: one chip per theme.
 
 import { CONFIG } from '../config.js';
-import { buttonsFor, hitButton } from './layout.js';
+import { buttonsFor, hitButton, FRAME } from './layout.js';
 import { isMuted, toggleMute, unlockAudio } from './audio.js';
 import { getFlag, setFlag } from './storage.js';
 import { THEME_IDS, pickTheme, themeState } from './themes/index.js';
@@ -22,7 +23,6 @@ export class Menu {
     this.focus = 0;           // index into the current screen's buttons
     this.pressId = -1;        // pointer holding a button down
     this.pressBtn = null;
-    this.overCardY = CONFIG.ARENA_H / 2; // set by the renderer at game over
     this._key = '';
     this._list = [];
     this._screen = '';
@@ -48,10 +48,10 @@ export class Menu {
   buttons() {
     const screen = this.screen();
     const muted = isMuted();
-    const key = screen + '|' + muted + '|' + this.howto + '|' + Math.round(this.overCardY) + '|' + themeState.picked;
+    const key = screen + '|' + muted + '|' + this.howto + '|' + FRAME.rev + '|' + themeState.picked;
     if (key !== this._key) {
       this._key = key;
-      this._list = buttonsFor({ screen, muted, howtoFirst: this.howto === 'first', overCardY: this.overCardY, themes: THEME_IDS });
+      this._list = buttonsFor({ screen, muted, howtoFirst: this.howto === 'first', themes: THEME_IDS });
       if (screen !== this._screen) { this.focus = 0; this._screen = screen; }
       if (this.focus >= this._list.length) this.focus = 0;
     }
@@ -64,15 +64,23 @@ export class Menu {
     return this.buttons()[this.focus] || null;
   }
 
-  // A button is enabled unless it's "Play again" during the restart guard.
+  // Game over (Phase 4C): only Play again, Enter or Space restart, and only
+  // once the card has been up for RESTART_LOCK seconds.
+  canRestart() {
+    const g = this.game;
+    return g.scene === 'over' && g.overT >= CONFIG.NAP_CARD_DELAY + CONFIG.RESTART_LOCK;
+  }
+
+  // A button is enabled unless it's "Play again" during the lock-out.
   enabled(b) {
-    return b.id !== 'again' || this.game.canRestart();
+    return b.id !== 'again' || this.canRestart();
   }
 
   // ---------------------------------------------------------------- actions
 
   activate(b) {
     if (!b || !this.enabled(b)) return;
+    if (screenShape.sideways) return;   // never start anything on a sideways phone
     unlockAudio();
     switch (b.id) {
       case 'play':
@@ -102,6 +110,9 @@ export class Menu {
       case 'again':
         this._start();
         break;
+      case 'quit':
+        this._quit();
+        break;
       case 'theme':
         pickTheme(b.themeId);   // the renderer bakes its art on the next (menu) frame
         break;
@@ -123,6 +134,16 @@ export class Menu {
     this.game.start();
   }
 
+  // Pause card -> title: the round is dropped (no score saved, no nap).
+  _quit() {
+    const g = this.game;
+    g.paused = false;
+    g.scene = 'title';
+    if (g._resetStats) g._resetStats();   // the HUD shows a fresh 0 / 60 again
+    this.input.clear();
+    this.input.enabled = false;
+  }
+
   pause() {
     if (this.game.scene !== 'play' || this.game.paused) return;
     this.game.pause();
@@ -142,10 +163,10 @@ export class Menu {
   pointerDown(e, x, y) {
     const s = this.screen();
     if (s === 'rotate') return true;
-    if (s === 'over' || s === 'napping') this.game.downSinceOver = true;
     if (s === 'napping') return true;
     const b = hitButton(this.buttons(), x, y);
     if (!b) return s !== 'play'; // on a card screen, taps never reach the game
+    if (!this.enabled(b)) return true; // Play again during the lock-out: the press doesn't count
     this.pressId = e.pointerId;
     this.pressBtn = b;
     if (b.kind !== 'hud') this.focus = this.buttons().indexOf(b);
@@ -161,10 +182,9 @@ export class Menu {
     this.pressBtn = null;
     if (was) {
       const b = hitButton(this.buttons(), x, y);
-      if (b && b.id === was.id) { this.activate(b); return; }
+      if (b && b.id === was.id) this.activate(b);
     }
-    // Game over: a tap anywhere also means "Play again" (unless the finger was held from gameplay).
-    if (s === 'over' && this.game.downSinceOver && this.game.canRestart()) this._start();
+    // A tap on empty space does nothing (Phase 4C): only the Play again button restarts.
   }
 
   // Mouse hover moves the focus, so the highlighted button is the one under the cursor.
@@ -203,7 +223,12 @@ export class Menu {
       return true;
     }
     if ((code === 'Enter' || code === 'Space' || code === 'NumpadEnter') && !e.repeat) {
-      this.activate(list[this.focus]);
+      // Space is the main action on the title (Play) and game over (Play again).
+      // Enter chooses the focused button (on game over: a theme chip, else Play again).
+      const f = list[this.focus];
+      const main = s === 'title' ? 'play' : s === 'over' ? 'again' : '';
+      if (main && (code === 'Space' || (s === 'over' && (!f || f.kind !== 'chip')))) this.activate(list.find((q) => q.id === main));
+      else this.activate(f);
       return true;
     }
     if ((code === 'Escape' || code === 'KeyP') && !e.repeat) {

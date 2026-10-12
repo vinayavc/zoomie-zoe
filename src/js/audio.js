@@ -461,12 +461,19 @@ const flop = sound((k, t) => {
   hiss(k, t, 0.12, 0.14, 'lowpass', 900, 250, 0.7, master, 0.004);
 });
 
+// Cinch that caught nothing: a soft paper "fff" and a little falling note. ~0.25 s
+// Gentle on purpose: it's a hint, not a punishment.
+const whiff = sound((k, t) => {
+  hiss(k, t, 0.2, 0.14, 'bandpass', 1400 * rnd(0.1), 500, 0.9, master, 0.03);
+  voice(k, 'triangle', t + 0.04, 0.16, 0.12, [[520 * rnd(0.04), 0], [330, 0.15]], master, 0.01);
+});
+
 // For debugging from the console: doxie.sfx.state() -> 'running' | 'suspended' | 'interrupted' | 'none'
 const state = () => (ctx ? ctx.state : 'none');
 
 export const sfx = {
   yip, cinch, pop, arf, caught, boof, twang, squeak, tick, countdown, sigh,
-  bounce, zoomies, rustle, bubbles, splash, flop,
+  bounce, zoomies, rustle, bubbles, splash, flop, whiff,
   isMuted, toggleMute, state,
 };
 

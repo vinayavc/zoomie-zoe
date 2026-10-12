@@ -9,7 +9,7 @@
 import { CONFIG } from '../config.js';
 import { P, HAND } from './art/palette.js';
 import { bakeShared, bakeTheme, bakeButton } from './art/bake.js';
-import { CARDS, CHIP_ROW } from './layout.js';
+import { CARDS, CHIP_ROW, FRAME } from './layout.js';
 import { themeState, getTheme } from './themes/index.js';
 import { isMuted } from './audio.js';
 import { ZoeRig } from './art/zoe-art.js';
@@ -22,7 +22,10 @@ const MONO = 'ui-monospace, Menlo, monospace';
 let shared = null;          // art every theme shares
 const themeArt = {};        // theme id -> shared + that theme's art (baked on first use)
 let art = null;             // the art for the theme on screen now
-let pendingW = 0, pendingSince = 0;
+let pendingK = 0, pendingSince = 0;
+let sideFill = null;        // paper-grain pattern for the screen around the arena
+let missSeen = 0;          // last game.cinchMissT seen (it jumps up on each missed cinch)
+const miss = { t: 0, x: 0, y: 0 };  // the "missed!" note
 let lastNow = 0;
 let lastScene = '';
 let clock = 0;
@@ -36,22 +39,24 @@ const pose = { x: 0, y: 0, heading: 0, segX: null, segY: null, n: CONFIG.SEG_COU
 let tuckA = 0; // 0..1: how far the blanket flap is pulled over her head
 const titlePose = { x: 0, y: 0, heading: 0, segX: new Float32Array(CONFIG.SEG_COUNT), segY: new Float32Array(CONFIG.SEG_COUNT), n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false };
 const leashX = new Float32Array(1100), leashY = new Float32Array(1100);
+let leashN = 0;
+const leashWarn = new Uint8Array(1100);
 
 // Bake on first use; re-bake once the canvas size has been stable for 200 ms.
 // A re-bake drops every cached theme; only the one on screen is baked again.
-function ensureArt(ctx, now) {
-  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+function ensureArt(ctx, view, now) {
   if (!shared) {
-    bake(ctx);
-  } else if (shared.pxW !== cw || shared.pxH !== ch) {
-    if (pendingW !== cw * 10000 + ch) { pendingW = cw * 10000 + ch; pendingSince = now; }
-    else if (now - pendingSince > 200) bake(ctx);
+    bake(ctx, view);
+  } else if (Math.abs(shared.k - view.k) > 1e-6) {
+    if (pendingK !== view.k) { pendingK = view.k; pendingSince = now; }
+    else if (now - pendingSince > 200) bake(ctx, view);
   }
   art = artFor(ctx, themeState.picked);
 }
 
-function bake(ctx) {
-  shared = bakeShared(ctx, ctx.canvas.width / W);
+function bake(ctx, view) {
+  shared = bakeShared(ctx, view.k);
+  sideFill = null;
   for (const id in themeArt) delete themeArt[id];
 }
 
@@ -89,34 +94,111 @@ function prewarm(ctx, a) {
   ctx.restore();
 }
 
+// ---------- the screen around the arena (Phase 4C) ----------
+// Baked into one screen-sized canvas per size + theme: the theme's letterbox
+// color under paper grain, a hard paper shadow under the arena, the HUD band's
+// paper (joined to the arena's own top strip), and the touch band's steer pad.
+function drawSurround(ctx, view) {
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const key = cw + 'x' + ch + '|' + view.ox + ',' + view.oy + '|' + view.k + '|' + FRAME.rev + '|' + art.theme.id;
+  if (!sideFill || sideFill.key !== key) sideFill = bakeSurround(cw, ch, view, key);
+  ctx.drawImage(sideFill.c, 0, 0);
+}
+
+function bakeSurround(cw, ch, view, key) {
+  const c = document.createElement('canvas');
+  c.width = cw; c.height = ch;
+  const g = c.getContext('2d');
+  g.fillStyle = art.theme.letterbox || '#4a4f66';
+  g.fillRect(0, 0, cw, ch);
+  g.globalCompositeOperation = 'multiply';
+  g.globalAlpha = 0.55;
+  g.fillStyle = g.createPattern(art.paper, 'repeat');
+  g.fillRect(0, 0, cw, ch);
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  g.setTransform(view.k, 0, 0, view.k, view.ox, view.oy);
+  const top = FRAME.banded ? -CONFIG.HUD_BAND_H : 0;
+  // hard paper shadow under the arena (and the HUD band)
+  g.fillStyle = 'rgba(30,28,48,0.35)';
+  g.fillRect(4, top + 5, W, H - top);
+  if (FRAME.banded) {
+    // the HUD band: plain paper that runs straight into the arena's top strip
+    g.fillStyle = P.paper;
+    g.fillRect(0, top, W, -top + 2);
+    g.save();
+    g.beginPath(); g.rect(0, top, W, -top + 2); g.clip();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'multiply';
+    g.globalAlpha = 0.5;
+    g.fillStyle = g.createPattern(art.paper, 'repeat');
+    g.fillRect(0, 0, cw, ch);
+    g.restore();
+  }
+  if (FRAME.ctrlH > 0) {
+    // the touch band: a soft paper pad on the left where the thumb steers
+    const y0 = H + 10, h = FRAME.ctrlH - 20;
+    const x0 = 14, w = FRAME.cinchX - FRAME.cinchR - 30;
+    g.globalAlpha = 0.16;
+    g.fillStyle = P.paper;
+    roundRect(g, x0, y0, w, h, 14); g.fill();
+    g.globalAlpha = 0.5;
+    g.strokeStyle = P.paper;
+    g.lineWidth = 1.5;
+    g.setLineDash([5, 4]);
+    roundRect(g, x0 + 4, y0 + 4, w - 8, h - 8, 11); g.stroke();
+    g.setLineDash([]);
+    g.globalAlpha = 0.85;
+    g.textAlign = 'center';
+    inkText(g, 'hold and drag to steer', x0 + w / 2, y0 + h / 2 + 5, 15, P.paper, null, 'normal');
+    g.globalAlpha = 1;
+  }
+  return { key, c };
+}
+
 export function render(ctx, view, game, input, debug, menu) {
   const now = performance.now();
   const dt = lastNow ? Math.min(0.1, (now - lastNow) / 1000) : 0;
   lastNow = now;
   clock += dt;
-  ensureArt(ctx, now);
+  ensureArt(ctx, view, now);
 
-  if (game.scene === 'play' && lastScene !== 'play') { rig.reset(); fx.reset(game); tuckA = 0; }
-  if (game.scene === 'over' && lastScene !== 'over') { startNap(game); menu.overCardY = nap.cardY; }
+  if (game.scene === 'play' && lastScene !== 'play') { rig.reset(); fx.reset(game); tuckA = 0; missSeen = 0; miss.t = 0; }
+  if (game.scene === 'over' && lastScene !== 'over') startNap(game);
   lastScene = game.scene;
 
-  // background (baked: bedspread, sun patch, blankets, HUD paper strip)
+  // the screen around the arena: the theme's letterbox color under paper grain
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  if (art.pxW === ctx.canvas.width && art.pxH === ctx.canvas.height) ctx.drawImage(art.bg.c, 0, 0);
-  else { ctx.setTransform(view.k, 0, 0, view.k, 0, 0); ctx.drawImage(art.bg.c, 0, 0, W, H); }
-  ctx.setTransform(view.k, 0, 0, view.k, 0, 0);
+  drawSurround(ctx, view);
+
+  // background (baked: bedspread, sun patch, blankets, HUD paper strip)
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (Math.abs(art.k - view.k) < 1e-6) ctx.drawImage(art.bg.c, view.ox, view.oy);
+  else { ctx.setTransform(view.k, 0, 0, view.k, view.ox, view.oy); ctx.drawImage(art.bg.c, 0, 0, W, H); }
+  ctx.setTransform(view.k, 0, 0, view.k, view.ox, view.oy);
+  if (FRAME.banded) drawHudBand(ctx);
 
   const frozen = game.paused || game.scene !== 'play';
   fx.update(game, game.paused ? 0 : dt);
+  noticeMiss(game);
+  if (miss.t > 0 && !game.paused) miss.t -= dt;
 
   if (game.scene !== 'title') {
+    // the room never draws outside the arena (critters and the bath slide in from off-screen)
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
     drawBath(ctx, game);
     drawFlash(ctx, game);
     // at game over the leash fades away while she flops into her nap
     const leashA = game.scene === 'over' ? 1 - game.overT / CONFIG.NAP_FLOP_TIME : 1;
-    if (leashA > 0) { ctx.globalAlpha = leashA; drawLeash(ctx, game); ctx.globalAlpha = 1; }
+    if (leashA > 0) {
+      ctx.globalAlpha = leashA;
+      drawLeash(ctx, game);
+      if (game.scene === 'play') drawSnapWarning(ctx, game);
+      ctx.globalAlpha = 1;
+    }
     if (game.scene === 'play') drawCinchPreview(ctx, game);
     drawItems(ctx, game);
     drawBall(ctx, game, frozen || game.hitStop > 0);
@@ -127,18 +209,21 @@ export function render(ctx, view, game, input, debug, menu) {
       drawTuck(ctx, game, game.paused ? 0 : dt);
     }
     fx.draw(ctx);
-    if (game.scene !== 'over') drawPopups(ctx, game);
+    if (game.scene !== 'over') { drawPopups(ctx, game); drawMiss(ctx); }
+    ctx.restore();
   }
   drawHud(ctx, game, menu);
   if (game.scene === 'play' && !game.paused) drawTouchControls(ctx, input, game);
+  else if (FRAME.ctrlH > 0 && game.scene === 'play') drawCinchButton(ctx, game, false);
 
   const screen = menu.screen();
-  if (screen === 'howto' || (screen === 'rotate' && menu.howto)) drawHowto(ctx, menu, dt);
-  else if (game.scene === 'title') drawTitle(ctx, dt, menu);
+  const touchUI = input.mode === 'touch' || (input.mode === 'none' && FRAME.touch);
+  if (screen === 'howto' || (screen === 'rotate' && menu.howto)) drawHowto(ctx, menu, dt, touchUI);
+  else if (game.scene === 'title') drawTitle(ctx, dt, menu, touchUI);
   else if (game.scene === 'over') drawGameOver(ctx, game, dt, menu);
-  else if (game.paused) drawPause(ctx, menu);
+  else if (game.paused) drawPause(ctx, menu, touchUI);
 
-  if (screen === 'rotate') drawRotate(ctx, dt);
+  if (screen === 'rotate') drawRotate(ctx, dt, game);
 
   if (debug.on && game.scene !== 'title') drawDebug(ctx, game, debug);
 
@@ -216,6 +301,7 @@ function drawLeash(ctx, game) {
   ctx.setLineDash([2, 3.2]);
   strokeLeash(ctx, n, -0.4, -0.4);
   ctx.setLineDash([]);
+  leashN = n;
   if (wet) {
     // soggy: drips falling off the rope
     ctx.fillStyle = P.waterDeep;
@@ -226,6 +312,75 @@ function drawLeash(ctx, game) {
     }
     ctx.globalAlpha = 1;
   }
+}
+
+// Snap warning (Phase 4C): where a critter is close to the part of the leash
+// it could snap, that stretch of rope trembles and flashes. Render-side only.
+function drawSnapWarning(ctx, game) {
+  const n = leashN;
+  if (n < 2 || (game.isCalm && game.isCalm())) return;
+  const z = game.zoe;
+  const safe = z.bodyLength() + CONFIG.SEG_RADIUS * 2;   // rope under her body can't snap
+  const reach = CONFIG.DOG_RADIUS + CONFIG.DOG_SNAP_PAD + CONFIG.SNAP_WARN_DIST;
+  const r2 = reach * reach;
+  let any = false, along = 0;
+  for (let i = 0; i < n; i++) {
+    if (i > 0) along += Math.hypot(leashX[i] - leashX[i - 1], leashY[i] - leashY[i - 1]);
+    leashWarn[i] = 0;
+    if (along < safe) continue;
+    for (const d of game.dogs) {
+      const dx = leashX[i] - d.x, dy = leashY[i] - d.y;
+      if (dx * dx + dy * dy < r2) { leashWarn[i] = 1; any = true; break; }
+    }
+  }
+  if (!any) return;
+  const flash = Math.sin(clock * 30) > 0;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 3.4;
+  ctx.strokeStyle = flash ? P.paper : P.rope;
+  ctx.beginPath();
+  for (let i = 1; i < n; i++) {
+    if (!leashWarn[i] && !leashWarn[i - 1]) continue;
+    const j0 = Math.sin(clock * 70 + i * 1.9) * 1.3, j1 = Math.sin(clock * 70 + (i - 1) * 1.9) * 1.3;
+    ctx.moveTo(leashX[i - 1] + j1, leashY[i - 1] - j1);
+    ctx.lineTo(leashX[i] + j0, leashY[i] - j0);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = P.ink;
+  ctx.setLineDash([2, 2.5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// Cinch miss (Phase 4C): game.cinchMissT jumps up each time a cinch catches
+// nothing (round.js); a soft paper "whiff" puff and a small "missed!" follow.
+function noticeMiss(game) {
+  const v = game.cinchMissT || 0;
+  if (game.scene === 'play' && v > missSeen + 1e-6) {
+    const z = game.zoe;
+    miss.x = Math.min(W - 40, Math.max(40, z.x + Math.cos(z.heading) * 10));
+    miss.y = Math.min(H - 20, Math.max(CONFIG.HUD_H + 30, z.y - 18));
+    miss.t = 0.9;
+    fx.puff(z.x + Math.cos(z.heading) * 8, z.y + Math.sin(z.heading) * 8, 6, P.paper, 45, 0.5, 4.5);
+    fx.puff(z.x, z.y, 3, P.dust, 30, 0.45, 3.5);
+  }
+  missSeen = v;
+}
+
+function drawMiss(ctx) {
+  if (miss.t <= 0) return;
+  const f = 1 - miss.t / 0.9;
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = Math.min(1, miss.t / 0.3);
+  inkText(ctx, 'missed!', miss.x, miss.y - f * 16, 14, P.indigo, P.paper);
+  // a little paper ring opening out, like a puff of air
+  ctx.strokeStyle = P.paper;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.arc(miss.x, miss.y + 14, 6 + f * 14, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
 }
 
 // Stitched dotted line from the leash end to Zoe; would-catch items glow.
@@ -310,10 +465,11 @@ function drawDogs(ctx, game, frozen) {
       }
     } else if (style === 'float') {
       wob = frozen ? 0 : Math.sin(clock * 2 + i) * 0.12;
-      lift = 5 + (frozen ? 0 : Math.sin(clock * 2.6 + i * 1.3) * 2.5);
+      // the bob is centred on the hitbox, so the ghost is drawn where it collides
+      lift = frozen ? 0 : Math.sin(clock * 2.6 + i * 1.3) * 2.5;
     }
     if (lift > 0 || style !== 'waddle') {
-      const sh = 1 - lift / 30;
+      const sh = 1 - Math.max(0, lift) / 30;
       ctx.fillStyle = P.shadow;
       ctx.beginPath(); ctx.ellipse(d.x + 1.6, d.y + 2.6, r * 1.15 * sh, r * 0.85 * sh, d.heading, 0, Math.PI * 2); ctx.fill();
     }
@@ -482,26 +638,29 @@ function drawPopups(ctx, game) {
     if (!p.active) continue;
     const f = p.t / CONFIG.POPUP_TIME;
     ctx.globalAlpha = 1 - f * f;
-    const y = p.y - CONFIG.POPUP_RISE * (1 - (1 - f) * (1 - f));
+    // always inside the arena and below the HUD strip
+    const y = Math.min(H - 8, Math.max(CONFIG.HUD_H + (p.big ? 26 : 18), p.y - CONFIG.POPUP_RISE * (1 - (1 - f) * (1 - f))));
+    const x = Math.min(W - 34, Math.max(34, p.x));
     const pop = p.big ? 1 + 0.35 * Math.max(0, 1 - f * 6) : 1;
-    inkText(ctx, p.text, p.x, y, Math.round((p.big ? 24 : 13) * pop), p.big ? P.rope : P.ink);
+    inkText(ctx, p.text, x, y, Math.round((p.big ? 24 : 14) * pop), p.big ? P.rope : P.ink);
   }
   ctx.globalAlpha = 1;
 }
 
-// ---------- HUD on the paper strip ----------
-function meter(ctx, x, y, w, frac, fill, label) {
+// ---------- HUD: on its own paper band above the arena when there's room, ----------
+// ---------- else on the paper strip across the top of the arena (layout.js) ----------
+function meter(ctx, x, y, w, frac, fill, label, size) {
   frac = Math.max(0, Math.min(1, frac));
   ctx.fillStyle = 'rgba(191,140,85,0.18)';
-  roundRect(ctx, x, y, w, 6, 3); ctx.fill();
-  if (frac > 0) { ctx.fillStyle = fill; roundRect(ctx, x, y, Math.max(6, w * frac), 6, 3); ctx.fill(); }
+  roundRect(ctx, x, y, w, 7, 3.5); ctx.fill();
+  if (frac > 0) { ctx.fillStyle = fill; roundRect(ctx, x, y, Math.max(7, w * frac), 7, 3.5); ctx.fill(); }
   ctx.strokeStyle = 'rgba(107,74,47,0.6)';
   ctx.lineWidth = 0.8;
-  roundRect(ctx, x, y, w, 6, 3); ctx.stroke();
+  roundRect(ctx, x, y, w, 7, 3.5); ctx.stroke();
   ctx.fillStyle = P.ink;
-  ctx.font = '11px ' + HAND;
+  ctx.font = size + 'px ' + HAND;
   ctx.textAlign = 'left';
-  ctx.fillText(label, x + w + 5, y + 7);
+  ctx.fillText(label, x + w + 5, y + 4 + size * 0.36);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -514,35 +673,51 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// Banded: a stitched seam where the HUD band meets the arena's top strip.
+function drawHudBand(ctx) {
+  ctx.strokeStyle = 'rgba(191,140,85,0.45)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(10, 1); ctx.lineTo(W - 10, 1); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
 function drawHud(ctx, game, menu) {
+  const band = FRAME.banded;
+  const y1 = FRAME.hudY;                         // centre of the top row
+  const big = band ? 20 : 16;
   ctx.textAlign = 'left';
-  inkText(ctx, 'Score ' + game.score, 10, 21, 16, P.ink, null);
+  inkText(ctx, 'Score ' + game.score, 10, y1 + big * 0.36, big, P.ink, null);
   ctx.textAlign = 'right';
-  inkText(ctx, 'Best ' + game.best, W - 10, 21, 16, P.ink, null);
+  inkText(ctx, 'Best ' + game.best, W - 10, y1 + big * 0.36, big, P.ink, null);
 
   // timer: a little watercolor stamp in the middle
   const low = game.scene === 'play' && game.timeLeft <= 10;
+  const tr = band ? 17 : 15, ty = y1 - 2;
   ctx.fillStyle = low ? 'rgba(207,93,110,0.28)' : 'rgba(247,233,198,0.95)';
-  ctx.beginPath(); ctx.arc(W / 2, 17, 15, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W / 2, ty, tr, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(107,74,47,0.5)';
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.textAlign = 'center';
-  inkText(ctx, String(Math.ceil(game.timeLeft)), W / 2, 24, 19, low ? P.rope : P.ink, null);
+  inkText(ctx, String(Math.ceil(game.timeLeft)), W / 2, ty + 7, band ? 21 : 19, low ? P.rope : P.ink, null);
 
   if (game.scene !== 'play') return;
   if (!game.paused) for (const b of menu.buttons()) drawHudButton(ctx, b, menu.isPressed(b));
   const z = game.zoe;
-  meter(ctx, 10, 31, 50, 1 - z.cooldown / CONFIG.STRETCH_COOLDOWN, z.stretchReady() ? P.apricot : P.saddle, z.stretchReady() ? 'cinch ready!' : 'cinch');
-  if (game.cheeseT > 0) meter(ctx, W - 116, 31, 50, game.cheeseT / CONFIG.CHEESE_TIME, P.cheese, 'long leash');
+  const my = band ? -18 : 31;                    // second row: the meters
+  const ls = band ? 14 : 12;
+  meter(ctx, 10, my, band ? 60 : 50, 1 - z.cooldown / CONFIG.STRETCH_COOLDOWN, z.stretchReady() ? P.apricot : P.saddle, z.stretchReady() ? 'cinch ready!' : 'cinch', ls);
+  if (game.cheeseT > 0) meter(ctx, band ? W - 142 : W - 116, my, band ? 56 : 50, game.cheeseT / CONFIG.CHEESE_TIME, P.cheese, 'long leash', ls);
   const since = game.elapsed - game.lastCaptureT;
   if (game.chain >= 1 && since <= CONFIG.CHAIN_WINDOW) {
+    const cy = band ? ty + tr + 3 : 34;
     ctx.fillStyle = P.rope;
-    roundRect(ctx, W / 2 - 30, 34, Math.max(3, 60 * (1 - since / CONFIG.CHAIN_WINDOW)), 3, 1.5);
+    roundRect(ctx, W / 2 - 30, cy, Math.max(3, 60 * (1 - since / CONFIG.CHAIN_WINDOW)), 3, 1.5);
     ctx.fill();
     if (game.chain > 1) {
       ctx.textAlign = 'center';
-      inkText(ctx, 'chain x' + game.chain, W / 2, 46, 10, P.rope, P.paper);
+      inkText(ctx, 'chain x' + game.chain, W / 2, band ? cy + 15 : 46, band ? 12 : 10, P.rope, P.paper);
     }
   }
 }
@@ -565,9 +740,14 @@ function drawTouchControls(ctx, input, game) {
     ctx.lineWidth = 1;
     ctx.stroke();
   }
-  if (!input.usedTouch) return;
-  const x = CONFIG.ACTION_BTN_X, y = CONFIG.ACTION_BTN_Y, r = CONFIG.ACTION_BTN_R;
-  const down = input.buttonDown ? 1.5 : 0;
+  // a touch device shows CINCH from the start (Phase 4C), not after the first touch
+  if (input.usedTouch || FRAME.touch) drawCinchButton(ctx, game, input.buttonDown);
+}
+
+// The CINCH button: in the touch band below the arena when there is one (layout.js).
+function drawCinchButton(ctx, game, pressed) {
+  const x = FRAME.cinchX, y = FRAME.cinchY, r = FRAME.cinchR;
+  const down = pressed ? 1.5 : 0;
   ctx.fillStyle = P.shadow;
   ctx.beginPath(); ctx.arc(x + 2.5, y + 3.5, r, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = 'rgba(251,246,236,0.88)';
@@ -583,7 +763,7 @@ function drawTouchControls(ctx, input, game) {
   ctx.arc(x + down, y + down, r - 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
   ctx.stroke();
   ctx.textAlign = 'center';
-  inkText(ctx, 'CINCH', x + down, y + down + 4, 12, P.ink, null);
+  inkText(ctx, 'CINCH', x + down, y + down + 5, r > 36 ? 15 : 13, P.ink, null);
 }
 
 // ---------- cards on torn paper ----------
@@ -597,7 +777,7 @@ function placeCard(ctx, card, cy, dim = true) {
 function dimScreen(ctx, a) {
   ctx.globalAlpha = a;
   ctx.fillStyle = 'rgba(52,50,78,0.28)';
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(FRAME.vx0, FRAME.vy0, FRAME.vx1 - FRAME.vx0, FRAME.vy1 - FRAME.vy0);
   ctx.globalAlpha = 1;
 }
 
@@ -644,12 +824,11 @@ function drawChip(ctx, b, focused, pressed, alpha) {
   }
 }
 
-// "Theme: Spooky Night" above the chips: the focused chip's name, else the picked one.
-function chipCaption(ctx, menu, y) {
-  const f = menu.focused();
-  const id = f && f.kind === 'chip' ? f.themeId : themeState.picked;
+// "Theme: Spooky Night" above the chips: always the picked theme (keyboard
+// focus is shown by the dashed ring only).
+function chipCaption(ctx, y) {
   ctx.textAlign = 'center';
-  inkText(ctx, 'Theme: ' + getTheme(id).name, W / 2, y, 14, P.ink, null, 'normal');
+  inkText(ctx, 'Theme: ' + getTheme(themeState.picked).name, W / 2, y, 14, P.ink, null, 'normal');
 }
 
 function drawButton(ctx, b, focused, pressed, enabled, alpha) {
@@ -733,20 +912,25 @@ function drawHudButton(ctx, b, pressed) {
 }
 
 // ---------- title, pause and how-to cards ----------
-function drawPause(ctx, menu) {
+function drawPause(ctx, menu, touch) {
   const b = placeCard(ctx, art.cardPause, CARDS.pause.cy);
   ctx.textAlign = 'center';
   inkText(ctx, 'Paused', W / 2, b.y + 58, 34, P.rope, null);
   drawMenuButtons(ctx, menu);
-  controlsHint(ctx, b.y + 294);
+  controlsHint(ctx, b.y + 352, touch);
 }
 
-// The keyboard reminder, on two lines (Revision 3 wording).
-function controlsHint(ctx, y) {
-  ctx.globalAlpha = 0.75;
+// The controls reminder, matched to the device (Phase 4C): one touch line, or
+// two mouse + keyboard lines. 14 px or more, so it's at least 12 CSS px on a 375 px phone.
+function controlsHint(ctx, y, touch) {
+  ctx.globalAlpha = 0.8;
   ctx.textAlign = 'center';
-  inkText(ctx, 'Arrows / WASD steer  ·  Shift + arrow loops', W / 2, y, 13, P.ink, null, 'normal');
-  inkText(ctx, 'Space cinches  ·  Esc or P pauses  ·  M mutes', W / 2, y + 18, 13, P.ink, null, 'normal');
+  if (touch) {
+    inkText(ctx, 'Hold and drag to steer  ·  tap CINCH', W / 2, y + 9, 15, P.ink, null, 'normal');
+  } else {
+    inkText(ctx, 'Mouse or arrows steer · Shift + arrow loops', W / 2, y, 13, P.ink, null, 'normal');
+    inkText(ctx, 'Click or Space cinches · Esc pauses · M mutes', W / 2, y + 18, 13, P.ink, null, 'normal');
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -762,27 +946,34 @@ function curlPose(p, x, y, heading, bend) {
   }
 }
 
-function drawTitle(ctx, dt, menu) {
+function drawTitle(ctx, dt, menu, touch) {
   const b = placeCard(ctx, art.cardTitle, CARDS.title.cy);
   ctx.textAlign = 'center';
   inkText(ctx, 'Zoomie Zoe', W / 2, b.y + 54, 42, P.rope, null);
   inkText(ctx, 'a leash-lasso sock heist', W / 2, b.y + 82, 17, P.ink, null, 'normal');
 
   // Zoe herself, big, in a gentle curl
-  const s = 3;
+  const s = 2.5;
   const p = titlePose;
-  curlPose(p, 0, Math.sin(clock * 2.2) * 0.6, 0.1 + Math.sin(clock * 1.3) * 0.05, 0.085);
+  curlPose(p, 0, Math.sin(clock * 2.2) * 0.6, 0.0 + Math.sin(clock * 1.3) * 0.04, 0.05);
   titleRig.update(p, dt);
   ctx.save();
-  ctx.translate(W / 2 + 84, b.y + 146);
+  ctx.translate(W / 2 + 84, b.y + 126);
   ctx.scale(s, s);
   titleRig.draw(ctx, p, art, 0.6);
   ctx.restore();
 
-  chipCaption(ctx, menu, b.y + CHIP_ROW.title - 36);
+  chipCaption(ctx, b.y + CHIP_ROW.title - 36);
   drawMenuButtons(ctx, menu);
-  controlsHint(ctx, b.y + 474);
+  controlsHint(ctx, b.y + 474, touch);
+
+  // the goal, in this theme's words (Phase 4C)
+  ctx.textAlign = 'center';
+  inkText(ctx, "Swing Zoe's leash around the", W / 2, b.y + GOAL_Y, 14, P.ink, null, 'normal');
+  inkText(ctx, art.theme.words.loot + ', then cinch!', W / 2, b.y + GOAL_Y + 17, 14, P.ink, null, 'bold');
 }
+
+const GOAL_Y = 208;   // the title card's goal line (offset from the card top)
 
 // How to play: three little pictures (steer, swing, cinch) and a legend.
 const howPoses = [0, 1, 2].map(() => ({ x: 0, y: 0, heading: 0, segX: new Float32Array(CONFIG.SEG_COUNT), segY: new Float32Array(CONFIG.SEG_COUNT), n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false, zoom: false, nap: '' }));
@@ -838,17 +1029,21 @@ function howPanel(ctx, x, y, w, h) {
   ctx.setLineDash([]);
 }
 
-function drawHowto(ctx, menu, dt) {
+function drawHowto(ctx, menu, dt, touch) {
   const b = placeCard(ctx, art.cardHowto, CARDS.howto.cy);
   ctx.textAlign = 'center';
   inkText(ctx, 'How to play', W / 2, b.y + 42, 30, P.rope, null);
 
   const colW = 112, gap = 6, top = b.y + 60, ph = 88;
   const x0 = W / 2 - colW * 1.5 - gap;
-  const steps = [
-    ['1. Steer', 'drag, mouse,', 'or arrow keys'],
+  const steps = touch ? [
+    ['1. Steer', 'hold and drag', 'anywhere'],
     ['2. Swing', 'the leash round', art.theme.words.loot],
-    ['3. Cinch!', 'CINCH button,', 'click or Space'],
+    ['3. Cinch!', 'tap CINCH', 'to pull it shut'],
+  ] : [
+    ['1. Steer', 'Zoe follows the', 'mouse, or arrows'],
+    ['2. Swing', 'the leash round', art.theme.words.loot],
+    ['3. Cinch!', 'click or Space', 'to pull it shut'],
   ];
   for (let i = 0; i < 3; i++) {
     const px = x0 + i * (colW + gap), cx = px + colW / 2, cy = top + ph / 2;
@@ -917,13 +1112,14 @@ function drawHowto(ctx, menu, dt) {
   const wd = art.theme.words;
   const rows = [
     ['ball', wd.ball, wd.ballTip],
+    ['cheese', wd.cheese || 'Cheese', wd.cheeseTip || 'longer leash for a while'],
     ['blanket', wd.hide, wd.hideTip],
     ['bath', wd.hazard, wd.hazardTip],
     ['dog', wd.critters, wd.critterTip],
   ];
   const ix = b.x + 42, tx = b.x + 80;
   for (let r = 0; r < rows.length; r++) {
-    const ry = b.y + 254 + r * 46;
+    const ry = b.y + 250 + r * 40;
     const [icon, label, text] = rows[r];
     drawLegendIcon(ctx, icon, ix, ry + 4);
     ctx.textAlign = 'left';
@@ -933,8 +1129,8 @@ function drawHowto(ctx, menu, dt) {
   }
   ctx.textAlign = 'center';
   ctx.globalAlpha = 0.8;
-  inkText(ctx, 'Arrows / WASD steer  ·  Shift + arrow loops', W / 2, b.y + 454, 13, P.ink, null, 'normal');
-  inkText(ctx, 'Space cinches', W / 2, b.y + 471, 13, P.ink, null, 'normal');
+  if (touch) inkText(ctx, 'A second finger also cinches', W / 2, b.y + 464, 14, P.ink, null, 'normal');
+  else inkText(ctx, 'Shift + arrow curves Zoe into a loop', W / 2, b.y + 464, 13, P.ink, null, 'normal');
   ctx.globalAlpha = 1;
   drawMenuButtons(ctx, menu);
 }
@@ -952,6 +1148,11 @@ function drawLegendIcon(ctx, icon, x, y) {
     const sp = art.tuck;
     ctx.rotate(-Math.PI / 2);
     ctx.scale(1.1, 1.1);
+    ctx.drawImage(sp.c, -sp.w / 2, -sp.h / 2, sp.w, sp.h);
+  } else if (icon === 'cheese') {
+    const sp = art.stickers.cheese;
+    ctx.rotate(-0.2);
+    ctx.scale(1.15, 1.15);
     ctx.drawImage(sp.c, -sp.w / 2, -sp.h / 2, sp.w, sp.h);
   } else if (icon === 'bath') {
     const sp = art.bath;
@@ -1008,14 +1209,10 @@ function startNap(game) {
   const fit = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)));
   const cardH = art.cardOver.h;
   const mx = z.segX[4], my = z.segY[4];
-  let top, bot;
-  if (my < (CONFIG.HUD_H + H) / 2) {
-    nap.cardY = H - cardH / 2 - 10;
-    top = CONFIG.HUD_H + 4; bot = nap.cardY - cardH / 2;
-  } else {
-    nap.cardY = CONFIG.HUD_H + cardH / 2 + 10;
-    top = nap.cardY + cardH / 2; bot = H - 4;
-  }
+  // Phase 4C: the card always sits in the same place (bottom of the arena),
+  // so Play again never jumps around; she naps in the room above it.
+  nap.cardY = CARDS.over.cy;
+  const top = CONFIG.HUD_H + 4, bot = nap.cardY - cardH / 2;
   nap.cx = fit(mx, 4 - x0, W - 4 - x1);
   nap.cy = fit(my, top - y0, bot - y1);
 
@@ -1076,7 +1273,7 @@ function drawNapCard(ctx, game, t, menu) {
   inkText(ctx, NAP_CAPTION[game.napPose] || '', W / 2, b.y + 128, 14, P.ink, null, 'normal');
   ctx.save();
   ctx.translate(0, dy);
-  chipCaption(ctx, menu, b.y - dy + CHIP_ROW.over - 36);
+  chipCaption(ctx, b.y - dy + CHIP_ROW.over - 36);
   drawMenuButtons(ctx, menu, ct);
   ctx.restore();
   ctx.globalAlpha = 1;
@@ -1118,7 +1315,7 @@ function drawZs(ctx, p, zt, sc) {
 // ---------- sideways phone: Zoe asks the player to turn the phone upright ----------
 const rotPose = { x: 0, y: 0, heading: 0, segX: new Float32Array(CONFIG.SEG_COUNT), segY: new Float32Array(CONFIG.SEG_COUNT), n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false, zoom: false, nap: '' };
 
-function drawRotate(ctx, dt) {
+function drawRotate(ctx, dt, game) {
   dimScreen(ctx, 1);
   const b = placeCard(ctx, art.cardRotate, CARDS.rotate.cy, false);
   ctx.textAlign = 'center';
@@ -1171,6 +1368,6 @@ function drawRotate(ctx, dt) {
 
   ctx.textAlign = 'center';
   ctx.globalAlpha = 0.8;
-  inkText(ctx, 'The round is paused.', W / 2, b.y + 392, 15, P.ink, null, 'normal');
+  inkText(ctx, game.scene === 'play' ? 'The round is paused.' : 'Play opens once it\'s upright.', W / 2, b.y + 392, 15, P.ink, null, 'normal');
   ctx.globalAlpha = 1;
 }
