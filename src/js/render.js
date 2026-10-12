@@ -9,6 +9,7 @@
 import { CONFIG } from '../config.js';
 import { P, HAND } from './art/palette.js';
 import { bakeShared, bakeTheme, bakeButton } from './art/bake.js';
+import { makeLayer, makeRng, tornOutline, fillPts } from './art/util.js';
 import { CARDS, CHIP_ROW, FRAME } from './layout.js';
 import { themeState, getTheme } from './themes/index.js';
 import { isMuted } from './audio.js';
@@ -178,7 +179,12 @@ export function render(ctx, view, game, input, debug, menu) {
   if (Math.abs(art.k - view.k) < 1e-6) ctx.drawImage(art.bg.c, view.ox, view.oy);
   else { ctx.setTransform(view.k, 0, 0, view.k, view.ox, view.oy); ctx.drawImage(art.bg.c, 0, 0, W, H); }
   ctx.setTransform(view.k, 0, 0, view.k, view.ox, view.oy);
-  if (FRAME.banded) drawHudBand(ctx);
+  if (FRAME.banded) {
+    // slim header: the floor runs up under a thin torn border (the strip is still a wall)
+    const sl = art.slimStrip || (art.slimStrip = bakeSlimStrip(art));
+    ctx.drawImage(sl.c, 0, 0, sl.w, sl.h);
+    drawHudBand(ctx);
+  }
 
   const frozen = game.paused || game.scene !== 'play';
   fx.update(game, game.paused ? 0 : dt);
@@ -673,12 +679,42 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Banded: a stitched seam where the HUD band meets the arena's top strip.
+// Banded layout (Vinny, Oct 12): the arena's old 44 px HUD strip is drawn slim.
+// The floor just below it is mirrored up over it (so it continues seamlessly),
+// lightly shaded toward the top so the edge zone reads as the room's wall, and a
+// thin torn paper border hangs off the HUD band. Rules are unchanged: the strip
+// is still a wall. Baked once per theme art.
+function bakeSlimStrip(a) {
+  const h = CONFIG.HUD_H + 8;
+  const L = makeLayer(W, h, a.k);
+  const g = L.g;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  const pw = L.c.width, ph = L.c.height;
+  g.translate(0, ph);
+  g.scale(1, -1);
+  g.drawImage(a.bg.c, 0, ph, pw, ph, 0, 0, pw, ph);   // rows h..2h, flipped
+  g.restore();
+  const sh = g.createLinearGradient(0, 0, 0, CONFIG.HUD_H);
+  sh.addColorStop(0, 'rgba(52,50,78,0.32)');
+  sh.addColorStop(1, 'rgba(52,50,78,0)');
+  g.fillStyle = sh;
+  g.fillRect(0, 0, W, CONFIG.HUD_H);
+  const rng = makeRng(45);
+  const edge = tornOutline([[-6, -6], [W + 6, -6], [W + 6, 5], [-6, 4]], 2.4, rng);
+  g.fillStyle = P.shadow;
+  g.save(); g.translate(0, 2.5); fillPts(g, edge); g.restore();
+  g.fillStyle = P.paper;
+  fillPts(g, edge);
+  return L;
+}
+
+// Banded: a stitched seam along the HUD band's bottom edge.
 function drawHudBand(ctx) {
   ctx.strokeStyle = 'rgba(191,140,85,0.45)';
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 3]);
-  ctx.beginPath(); ctx.moveTo(10, 1); ctx.lineTo(W - 10, 1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(10, -3); ctx.lineTo(W - 10, -3); ctx.stroke();
   ctx.setLineDash([]);
 }
 

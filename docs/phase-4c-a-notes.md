@@ -50,6 +50,12 @@ Built Oct 12, 2026, from `docs/phase-4c-fix-plan.md` ("Builder A"). The arena is
 - **Screenshots at 1280 × 800.** The pane's screenshots are wrong when the emulated size is larger than the pane: they show a half-size stale image. I checked the canvas pixels and the geometry directly, and used 800 × 500 for the look.
 - Real phones, the real MV3 popup, audio by ear (whiff), and the safe-area insets with the new bands.
 
+## Slim header (Vinny, Oct 12)
+- In the banded layout, the old 44 px strip is now drawn slim (`render.js` → `bakeSlimStrip`, baked once per theme). The floor just below the strip is mirrored up over it, so it continues seamlessly. A light shade toward the top marks the edge zone, and a thin torn paper border (about 5 px) hangs off the HUD band.
+- The strip is still a wall, and the bounds are unchanged.
+- The popup and short-screen layout (400 × 600) is unchanged.
+- Checked at 375 × 812 and 400 × 600 in Bedroom and Spring. No console errors.
+- In Spring, the mirroring is faintly visible on the vine near the top-left.
+
 ## Notes / open questions
-- In the banded layout, the old 44 px strip is an empty paper border under the HUD band. It reads as one tall paper header. Vinny might prefer a slimmer look.
 - The touch band's "hold and drag to steer" label stays under the thumb-pad while steering.
