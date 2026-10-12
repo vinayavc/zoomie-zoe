@@ -4,6 +4,7 @@
 
 import { CONFIG } from '../../config.js';
 import { P } from './palette.js';
+import { CARDS } from '../layout.js';
 import { makeRng, makeLayer, polygon, deform, fillPts, wash, tornOutline, roundRectPts } from './util.js';
 
 const W = CONFIG.ARENA_W, H = CONFIG.ARENA_H;
@@ -30,8 +31,11 @@ export function bakeAll(mainCtx, k) {
     bath: bakeBath(k, paper),
     bubble: bakeBubble(k),
     tuck: bakeTuck(k, paper),
-    cardTitle: bakeCard(324, 400, k, paper, 11),
-    cardOver: bakeCard(290, 230, k, paper, 23),
+    cardTitle: bakeCard(CARDS.title.w, CARDS.title.h, k, paper, 11),
+    cardOver: bakeCard(CARDS.over.w, CARDS.over.h, k, paper, 23),
+    cardPause: bakeCard(CARDS.pause.w, CARDS.pause.h, k, paper, 31),
+    cardHowto: bakeCard(CARDS.howto.w, CARDS.howto.h, k, paper, 47),
+    buttons: {},   // torn-paper menu buttons, baked on first use (see bakeButton)
     zoeCream: null,
     zoeSaddle: null,
     bakeMs: 0,
@@ -575,6 +579,35 @@ function bakeCard(w, h, k, paper, seed) {
   pathPts(g, edge);
   g.stroke();
   grainAtop(L, paper, 0.22);
+  L.pad = pad;
+  return L;
+}
+
+// ---- torn paper menu buttons (Phase 4B). `big` = the sunny main choice. ----
+// Baked on first use per size; the renderer caches them in art.buttons.
+export function bakeButton(w, h, big, art) {
+  const k = art.k, paper = art.paper;
+  const pad = 6;
+  const L = makeLayer(w + pad * 2, h + pad * 2, k);
+  const g = L.g;
+  const rng = makeRng(Math.round(w * 7 + h * 13 + (big ? 5 : 0)));
+  g.translate(pad, pad);
+  const edge = tornOutline(deform(roundRectPts(0, 0, w, h, 9, 3), 1, 0.015, rng), 1.8, rng);
+  g.fillStyle = big ? P.sun : P.paper;
+  fillPts(g, edge);
+  g.save();
+  pathPts(g, edge);
+  g.clip();
+  for (let i = 0; i < 6; i++) {
+    const x = (i / 5) * w, y = i % 2 ? h : 0;
+    wash(g, polygon(x, y, h * 0.55, 7, rng), big ? P.cheese : i % 2 ? P.sun : P.pink, rng, { layers: 6, alpha: big ? 0.07 : 0.05 });
+  }
+  g.restore();
+  g.strokeStyle = 'rgba(107,74,47,0.55)';
+  g.lineWidth = 1.1;
+  pathPts(g, edge);
+  g.stroke();
+  grainAtop(L, paper, 0.2);
   L.pad = pad;
   return L;
 }

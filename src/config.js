@@ -1,4 +1,4 @@
-// Doxie Arcade: every tunable number lives here.
+// Zoomie Zoe: every tunable number lives here.
 // Units: distances in arena pixels (the arena is always 400 x 600),
 // times in seconds, angles in radians, speeds in pixels per second.
 //
@@ -107,7 +107,7 @@ export const CONFIG = {
   BALL_MIN_DIST_ZOE: 130,   // spawns at least this far from her head
   BALL_EDGE: 30,            // keep the ball this far from the walls
   ZOOMIES_TIME: 4,
-  ZOOMIES_SPEED_MULT: 1.4,  // +40% speed
+  ZOOMIES_SPEED_MULT: 1.3,  // +30% speed (Vinny: +40% was too wild)
   ZOOMIES_TURN_MULT: 1.4,   // faster turning, so the tighter turning circle stays similar
 
   // Blanket piles -> hiding. Same outlines the bedroom art paints (arena px).
@@ -115,7 +115,7 @@ export const CONFIG = {
     [[410, 250], [370, 268], [358, 318], [378, 368], [412, 390]],   // right edge
     [[-14, 488], [32, 508], [58, 554], [46, 612], [-14, 612]],      // bottom-left corner
   ],
-  DOG_LOST_TIME: 1.0,       // after she leaves a blanket, dogs stay confused this long
+  DOG_LOST_TIME: 2.0,       // after she leaves a blanket, dogs stay confused this long (Vinny: 1 s felt pointless)
 
   // Bath -> hazard. A soapy puddle that slides across the arena.
   BATH_START: 15,           // no bath before this many seconds into the round
@@ -143,4 +143,15 @@ export const CONFIG = {
   ACTION_BTN_X: 346,        // on-screen stretch button (touch only)
   ACTION_BTN_Y: 546,
   ACTION_BTN_R: 34,
+  PAD_KNOB_R: 20,           // drawn size of the thumb knob (bigger = easier to see under a thumb)
+  KEY_HOLD_LOOP_DELAY: 0.4, // hold <- or -> longer than this and Zoe keeps curving (draws a circle)
+
+  // ---- Menus and HUD buttons (Phase 4B) ----
+  HUD_BTN_R: 15,            // drawn radius of the HUD pause / sound buttons
+  HUD_BTN_HIT: 24,          // their tap radius (48 arena px across, about 45 CSS px on a 375 px phone)
+  MUTE_BTN_X: 152,          // sound button, left of the timer
+  PAUSE_BTN_X: 248,         // pause button, right of the timer
+  HUD_BTN_Y: 19,
+  MENU_BTN_H: 50,           // menu buttons on the paper cards (tap targets)
+  REDUCED_CONFETTI: 0.45,   // prefers-reduced-motion: this share of the confetti, moving slower
 };

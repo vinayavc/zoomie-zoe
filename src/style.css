@@ -12,6 +12,9 @@ html, body {
 }
 
 body {
+  /* Pinned to the screen: no rubber-band scroll or pull-to-refresh on phones. */
+  position: fixed;
+  inset: 0;
   height: 100dvh;
   box-sizing: border-box;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -33,6 +36,7 @@ canvas {
 /* Chrome extension popup: pin to exactly 400 x 600 (the max is 800 x 600). */
 html.popup,
 html.popup body {
+  position: static;
   width: 400px;
   height: 600px;
   padding: 0;

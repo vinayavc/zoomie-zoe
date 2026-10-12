@@ -6,9 +6,12 @@
 
 import { CONFIG } from '../config.js';
 import { P, HAND } from './art/palette.js';
-import { bakeAll } from './art/bake.js';
+import { bakeAll, bakeButton } from './art/bake.js';
+import { CARDS } from './layout.js';
+import { isMuted } from './audio.js';
 import { ZoeRig } from './art/zoe-art.js';
 import { Fx } from './art/fx.js';
+import { motion } from './platform.js';
 
 const W = CONFIG.ARENA_W, H = CONFIG.ARENA_H;
 const MONO = 'ui-monospace, Menlo, monospace';
@@ -21,6 +24,7 @@ let clock = 0;
 const rig = new ZoeRig();
 const titleRig = new ZoeRig();
 const napRig = new ZoeRig();
+const howRigs = [new ZoeRig(), new ZoeRig(), new ZoeRig()];
 const fx = new Fx();
 const pose = { x: 0, y: 0, heading: 0, segX: null, segY: null, n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false, zoom: false, nap: '' };
 let tuckA = 0; // 0..1: how far the blanket flap is pulled over her head
@@ -44,7 +48,7 @@ function bake(ctx) {
   if (globalThis.doxie) globalThis.doxie.art = { bakeMs: Math.round(art.bakeMs), bakes: art.bakeCount, k: art.k };
 }
 
-export function render(ctx, view, game, input, debug) {
+export function render(ctx, view, game, input, debug, menu) {
   const now = performance.now();
   const dt = lastNow ? Math.min(0.1, (now - lastNow) / 1000) : 0;
   lastNow = now;
@@ -52,7 +56,7 @@ export function render(ctx, view, game, input, debug) {
   ensureArt(ctx, now);
 
   if (game.scene === 'play' && lastScene !== 'play') { rig.reset(); fx.reset(game); tuckA = 0; }
-  if (game.scene === 'over' && lastScene !== 'over') startNap(game);
+  if (game.scene === 'over' && lastScene !== 'over') { startNap(game); menu.overCardY = nap.cardY; }
   lastScene = game.scene;
 
   // background (baked: bedspread, sun patch, blankets, HUD paper strip)
@@ -84,12 +88,14 @@ export function render(ctx, view, game, input, debug) {
     fx.draw(ctx);
     if (game.scene !== 'over') drawPopups(ctx, game);
   }
-  drawHud(ctx, game);
+  drawHud(ctx, game, menu);
   if (game.scene === 'play' && !game.paused) drawTouchControls(ctx, input, game);
 
-  if (game.scene === 'title') drawTitle(ctx, dt);
-  else if (game.scene === 'over') drawGameOver(ctx, game, dt);
-  else if (game.paused) drawCard(ctx, art.cardOver, 'Paused', ['tap or press Space to resume']);
+  const screen = menu.screen();
+  if (screen === 'howto') drawHowto(ctx, menu, dt);
+  else if (game.scene === 'title') drawTitle(ctx, dt, menu);
+  else if (game.scene === 'over') drawGameOver(ctx, game, dt, menu);
+  else if (game.paused) drawPause(ctx, menu);
 
   if (debug.on && game.scene !== 'title') drawDebug(ctx, game, debug);
 }
@@ -426,9 +432,9 @@ function meter(ctx, x, y, w, frac, fill, label) {
   ctx.lineWidth = 0.8;
   roundRect(ctx, x, y, w, 6, 3); ctx.stroke();
   ctx.fillStyle = P.ink;
-  ctx.font = '10px ' + HAND;
+  ctx.font = '11px ' + HAND;
   ctx.textAlign = 'left';
-  ctx.fillText(label, x + w + 5, y + 6.5);
+  ctx.fillText(label, x + w + 5, y + 7);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -441,7 +447,7 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawHud(ctx, game) {
+function drawHud(ctx, game, menu) {
   ctx.textAlign = 'left';
   inkText(ctx, 'Score ' + game.score, 10, 21, 16, P.ink, null);
   ctx.textAlign = 'right';
@@ -458,6 +464,7 @@ function drawHud(ctx, game) {
   inkText(ctx, String(Math.ceil(game.timeLeft)), W / 2, 24, 19, low ? P.rope : P.ink, null);
 
   if (game.scene !== 'play') return;
+  if (!game.paused) for (const b of menu.buttons()) drawHudButton(ctx, b, menu.isPressed(b));
   const z = game.zoe;
   meter(ctx, 10, 31, 50, 1 - z.cooldown / CONFIG.STRETCH_COOLDOWN, z.stretchReady() ? P.apricot : P.saddle, z.stretchReady() ? 'cinch ready!' : 'cinch');
   if (game.cheeseT > 0) meter(ctx, W - 116, 31, 50, game.cheeseT / CONFIG.CHEESE_TIME, P.cheese, 'long leash');
@@ -482,10 +489,11 @@ function drawTouchControls(ctx, input, game) {
     ctx.setLineDash([5, 4]);
     ctx.beginPath(); ctx.arc(pad.cx, pad.cy, CONFIG.PAD_RADIUS, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
+    const kr = CONFIG.PAD_KNOB_R;
     ctx.fillStyle = P.shadowSoft;
-    ctx.beginPath(); ctx.arc(pad.kx + 1.5, pad.ky + 2.2, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(pad.kx + 1.5, pad.ky + 2.2, kr, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = 'rgba(251,246,236,0.85)';
-    ctx.beginPath(); ctx.arc(pad.kx, pad.ky, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(pad.kx, pad.ky, kr, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(107,74,47,0.5)';
     ctx.lineWidth = 1;
     ctx.stroke();
@@ -526,51 +534,322 @@ function dimScreen(ctx, a) {
   ctx.globalAlpha = 1;
 }
 
-function drawCard(ctx, card, title, lines, cy = H / 2, dim = true) {
-  const b = placeCard(ctx, card, cy, dim);
-  ctx.textAlign = 'center';
-  inkText(ctx, title, W / 2, b.y + 62, 34, P.rope, null);
-  for (let i = 0; i < lines.length; i++) inkText(ctx, lines[i], W / 2, b.y + 108 + i * 26, 17, P.ink, null, 'normal');
+// ---------- menu buttons: torn paper, stitched focus ring ----------
+function buttonArt(b) {
+  const big = b.kind === 'big';
+  const key = b.w + 'x' + b.h + (big ? 'b' : '');
+  return art.buttons[key] || (art.buttons[key] = bakeButton(b.w, b.h, big, art));
 }
 
-function drawTitle(ctx, dt) {
-  const b = placeCard(ctx, art.cardTitle, H / 2 - 4);
-  ctx.textAlign = 'center';
-  inkText(ctx, 'Doxie Arcade', W / 2, b.y + 50, 36, P.rope, null);
-  inkText(ctx, 'Leash Lasso, starring Zoe', W / 2, b.y + 76, 15, P.ink, null, 'normal');
+function drawMenuButtons(ctx, menu, alpha = 1) {
+  const f = menu.focused();
+  for (const b of menu.buttons()) {
+    if (b.kind === 'hud') continue;
+    drawButton(ctx, b, b === f, menu.isPressed(b), menu.enabled(b), alpha);
+  }
+}
 
-  // Zoe herself, big, in a gentle curl
-  const s = 3;
-  const p = titlePose;
-  const bob = Math.sin(clock * 2.2) * 0.6;
-  p.heading = 0.1 + Math.sin(clock * 1.3) * 0.05;
-  p.x = 0; p.y = bob;
-  let px = 0, py = bob;
+function drawButton(ctx, b, focused, pressed, enabled, alpha) {
+  const sp = buttonArt(b);
+  const off = pressed ? 1.5 : 0;
+  ctx.globalAlpha = alpha * (enabled ? 1 : 0.45);
+  // hard paper shadow
+  ctx.fillStyle = P.shadow;
+  roundRect(ctx, b.x + 2.5, b.y + 3.5, b.w, b.h, 9);
+  ctx.fill();
+  if (focused && enabled) {
+    ctx.strokeStyle = P.rope;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3.5]);
+    roundRect(ctx, b.x - 5 + off, b.y - 5 + off, b.w + 10, b.h + 10, 13);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.drawImage(sp.c, b.x - sp.pad + off, b.y - sp.pad + off, sp.w, sp.h);
+  const big = b.kind === 'big';
+  const size = big ? (b.h > 52 ? 26 : 21) : 17;
+  const cx = b.cx + off, cy = b.cy + off;
+  ctx.textAlign = 'center';
+  if (b.kind === 'sound') {
+    const muted = isMuted();
+    ctx.font = 'bold ' + size + 'px ' + HAND;
+    const tw = ctx.measureText(b.label).width;
+    drawSpeaker(ctx, cx - tw / 2 - 4, cy - 1, 0.85, muted);
+    inkText(ctx, b.label, cx + 10, cy + size * 0.36, size, P.ink, null);
+  } else {
+    inkText(ctx, b.label, cx, cy + size * 0.36, size, big ? P.rope : P.ink, null);
+  }
+  ctx.globalAlpha = alpha;
+}
+
+// A little paper speaker: two arcs of sound, or a cross when muted.
+function drawSpeaker(ctx, x, y, s, muted) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.fillStyle = P.ink;
+  ctx.beginPath();
+  ctx.moveTo(-9, -3.5); ctx.lineTo(-5, -3.5); ctx.lineTo(0, -8); ctx.lineTo(0, 8); ctx.lineTo(-5, 3.5); ctx.lineTo(-9, 3.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = muted ? P.rope : P.ink;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (muted) {
+    ctx.moveTo(3.5, -4); ctx.lineTo(10.5, 4);
+    ctx.moveTo(10.5, -4); ctx.lineTo(3.5, 4);
+  } else {
+    ctx.arc(0, 0, 5, -0.8, 0.8);
+    ctx.moveTo(Math.cos(-0.8) * 9.5, Math.sin(-0.8) * 9.5);
+    ctx.arc(0, 0, 9.5, -0.8, 0.8);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// HUD paper discs: sound (speaker) and pause (two bars).
+function drawHudButton(ctx, b, pressed) {
+  const r = CONFIG.HUD_BTN_R;
+  const off = pressed ? 1.2 : 0;
+  const x = b.cx + off, y = b.cy + off;
+  ctx.fillStyle = P.shadowSoft;
+  ctx.beginPath(); ctx.arc(b.cx + 1.5, b.cy + 2.2, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(251,246,236,0.95)';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(107,74,47,0.5)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  if (b.id === 'mute') {
+    drawSpeaker(ctx, x + 0.5, y, 0.8, isMuted());
+  } else {
+    ctx.fillStyle = P.ink;
+    roundRect(ctx, x - 5.5, y - 6.5, 4, 13, 1.5); ctx.fill();
+    roundRect(ctx, x + 1.5, y - 6.5, 4, 13, 1.5); ctx.fill();
+  }
+}
+
+// ---------- title, pause and how-to cards ----------
+function drawPause(ctx, menu) {
+  const b = placeCard(ctx, art.cardPause, CARDS.pause.cy);
+  ctx.textAlign = 'center';
+  inkText(ctx, 'Paused', W / 2, b.y + 58, 34, P.rope, null);
+  drawMenuButtons(ctx, menu);
+}
+
+// A curled Zoe pose: head at (x, y), body bending `bend` radians per segment.
+function curlPose(p, x, y, heading, bend) {
+  p.x = x; p.y = y; p.heading = heading;
+  let px = x, py = y;
   for (let i = 0; i < p.n; i++) {
-    const a = p.heading - (i + 1) * 0.085;
+    const a = heading - (i + 1) * bend;
     px -= Math.cos(a) * CONFIG.SEG_SPACING;
     py -= Math.sin(a) * CONFIG.SEG_SPACING;
     p.segX[i] = px; p.segY[i] = py;
   }
+}
+
+function drawTitle(ctx, dt, menu) {
+  const b = placeCard(ctx, art.cardTitle, CARDS.title.cy);
+  ctx.textAlign = 'center';
+  inkText(ctx, 'Zoomie Zoe', W / 2, b.y + 54, 42, P.rope, null);
+  inkText(ctx, 'a leash-lasso sock heist', W / 2, b.y + 82, 17, P.ink, null, 'normal');
+
+  // Zoe herself, big, in a gentle curl
+  const s = 3;
+  const p = titlePose;
+  curlPose(p, 0, Math.sin(clock * 2.2) * 0.6, 0.1 + Math.sin(clock * 1.3) * 0.05, 0.085);
   titleRig.update(p, dt);
   ctx.save();
-  ctx.translate(W / 2 + 84, b.y + 150);
+  ctx.translate(W / 2 + 84, b.y + 146);
   ctx.scale(s, s);
   titleRig.draw(ctx, p, art, 0.6);
   ctx.restore();
 
-  const pulse = 1 + Math.sin(clock * 4) * 0.04;
-  ctx.save();
-  ctx.translate(W / 2, b.y + 268);
-  ctx.scale(pulse, pulse);
-  inkText(ctx, 'Tap to play', 0, 0, 24, P.ink, P.sun);
-  ctx.restore();
-  inkText(ctx, 'Steer to swing your leash around socks,', W / 2, b.y + 304, 13, P.ink, null, 'normal');
-  inkText(ctx, 'then cinch it shut to catch them!', W / 2, b.y + 322, 13, P.ink, null, 'normal');
+  drawMenuButtons(ctx, menu);
   ctx.globalAlpha = 0.75;
-  inkText(ctx, 'Steer: drag / mouse / ← → or A D', W / 2, b.y + 348, 11, P.ink, null, 'normal');
-  inkText(ctx, 'Cinch: 2nd finger or button / click / Space', W / 2, b.y + 364, 11, P.ink, null, 'normal');
+  ctx.textAlign = 'center';
+  inkText(ctx, 'Esc or P pauses  ·  M mutes', W / 2, b.y + 394, 13, P.ink, null, 'normal');
   ctx.globalAlpha = 1;
+}
+
+// How to play: three little pictures (steer, swing, cinch) and a legend.
+const howPoses = [0, 1, 2].map(() => ({ x: 0, y: 0, heading: 0, segX: new Float32Array(CONFIG.SEG_COUNT), segY: new Float32Array(CONFIG.SEG_COUNT), n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false, zoom: false, nap: '' }));
+const HOW_R = 27;   // radius of the leash loop in the pictures
+const HOW_SPACING = CONFIG.SEG_SPACING;
+
+// Zoe running clockwise round a circle, head at angle `phi`.
+function circlePose(p, cx, cy, phi) {
+  p.x = cx + Math.cos(phi) * HOW_R;
+  p.y = cy + Math.sin(phi) * HOW_R;
+  p.heading = phi + Math.PI / 2;
+  for (let i = 0; i < p.n; i++) {
+    const a = phi - ((i + 1) * HOW_SPACING) / HOW_R;
+    p.segX[i] = cx + Math.cos(a) * HOW_R;
+    p.segY[i] = cy + Math.sin(a) * HOW_R;
+  }
+}
+
+function ropeArc(ctx, cx, cy, a0, a1) {
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = P.shadowSoft;
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(cx + 1.6, cy + 2.4, HOW_R, a0, a1); ctx.stroke();
+  ctx.strokeStyle = P.rope;
+  ctx.lineWidth = 2.8;
+  ctx.beginPath(); ctx.arc(cx, cy, HOW_R, a0, a1); ctx.stroke();
+  ctx.strokeStyle = P.ropeLight;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 3.2]);
+  ctx.beginPath(); ctx.arc(cx - 0.4, cy - 0.4, HOW_R, a0, a1); ctx.stroke();
+  ctx.setLineDash([]);
+  const ex = cx + Math.cos(a0) * HOW_R, ey = cy + Math.sin(a0) * HOW_R;
+  ctx.strokeStyle = P.rope;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.arc(ex, ey, 3.6, 0, Math.PI * 2); ctx.stroke();
+}
+
+function sticker(ctx, type, x, y, rot, sc = 1) {
+  const sp = art.stickers[type];
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.drawImage(sp.c, -sp.w / 2, -sp.h / 2, sp.w, sp.h);
+  ctx.restore();
+}
+
+function howPanel(ctx, x, y, w, h) {
+  ctx.fillStyle = 'rgba(247,233,198,0.7)';
+  roundRect(ctx, x, y, w, h, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(191,140,85,0.55)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 2.5]);
+  roundRect(ctx, x + 2.5, y + 2.5, w - 5, h - 5, 6); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawHowto(ctx, menu, dt) {
+  const b = placeCard(ctx, art.cardHowto, CARDS.howto.cy);
+  ctx.textAlign = 'center';
+  inkText(ctx, 'How to play', W / 2, b.y + 42, 30, P.rope, null);
+
+  const colW = 112, gap = 6, top = b.y + 60, ph = 88;
+  const x0 = W / 2 - colW * 1.5 - gap;
+  const steps = [
+    ['1. Steer', 'drag, mouse,', 'or ← → keys'],
+    ['2. Swing', 'the leash round', 'socks & shoes'],
+    ['3. Cinch!', 'CINCH button,', 'click or Space'],
+  ];
+  for (let i = 0; i < 3; i++) {
+    const px = x0 + i * (colW + gap), cx = px + colW / 2, cy = top + ph / 2;
+    howPanel(ctx, px, top, colW, ph);
+    const p = howPoses[i];
+    p.odo = clock * 70;
+    if (i === 0) {
+      // Zoe trotting along a curve, with a dotted "steer" arrow ahead of her
+      const hx = cx + 20, hy = cy + 2;
+      curlPose(p, hx, hy, -0.2, 0.05);
+      ctx.strokeStyle = P.rope;
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(hx + 12, hy - 4); ctx.quadraticCurveTo(hx + 28, hy - 8, hx + 28, hy - 26); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = P.rope;
+      ctx.beginPath(); ctx.moveTo(hx + 28, hy - 33); ctx.lineTo(hx + 23, hy - 24); ctx.lineTo(hx + 33, hy - 24); ctx.closePath(); ctx.fill();
+      howRigs[i].update(p, dt);
+      howRigs[i].draw(ctx, p, art, 0.9);
+    } else {
+      // the leash swings round the loot; the cinch snaps it shut
+      const lx = cx + 2, ly = cy + 6;
+      const phi = -0.3;
+      const tipA = phi - (i === 1 ? 4.4 : 5.3);
+      if (i === 2) {
+        ctx.globalAlpha = 0.55 + 0.25 * Math.sin(clock * 4);
+        ctx.fillStyle = P.sun;
+        ctx.beginPath(); ctx.arc(lx, ly, HOW_R, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      sticker(ctx, 'sock', lx - 7, ly - 5, -0.3);
+      sticker(ctx, 'shoe', lx + 7, ly + 7, 0.25, 0.85);
+      ctx.save();
+      ctx.translate(lx, ly); ctx.scale(0.85, 0.85); ctx.translate(-lx, -ly);
+      ropeArc(ctx, lx, ly, tipA, phi);
+      if (i === 2) {
+        const tx = lx + Math.cos(tipA) * HOW_R, ty = ly + Math.sin(tipA) * HOW_R;
+        const hx = lx + Math.cos(phi) * HOW_R, hy = ly + Math.sin(phi) * HOW_R;
+        ctx.strokeStyle = P.thread;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3.4, 3.4]);
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      circlePose(p, lx, ly, phi);
+      howRigs[i].update(p, dt);
+      howRigs[i].draw(ctx, p, art, 0.9);
+      ctx.restore();
+      if (i === 2) inkText(ctx, '+6', px + colW - 16, top + ph - 10, 16, P.rope);
+    }
+    ctx.textAlign = 'center';
+    inkText(ctx, steps[i][0], cx, top + ph + 22, 16, P.rope, null);
+    inkText(ctx, steps[i][1], cx, top + ph + 40, 13, P.ink, null, 'normal');
+    inkText(ctx, steps[i][2], cx, top + ph + 56, 13, P.ink, null, 'normal');
+  }
+
+  // stitched divider
+  const dy = b.y + 228;
+  ctx.strokeStyle = 'rgba(191,140,85,0.6)';
+  ctx.lineWidth = 1.2;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(b.x + 24, dy); ctx.lineTo(b.x + b.w - 24, dy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // legend: what's what in Zoe's room
+  const rows = [
+    ['ball', 'Ball', 'grab it for the zoomies!'],
+    ['blanket', 'Blankets', 'hide under one: dogs lose you'],
+    ['bath', 'Bath', 'dodge it, or your leash gets soggy'],
+    ['dog', 'Dogs', 'a bump makes Zoe dizzy, and a'],
+  ];
+  const ix = b.x + 42, tx = b.x + 80;
+  for (let r = 0; r < rows.length; r++) {
+    const ry = b.y + 256 + r * 48;
+    const [icon, label, text] = rows[r];
+    drawLegendIcon(ctx, icon, ix, ry + 4);
+    ctx.textAlign = 'left';
+    inkText(ctx, label, tx, ry, 15, P.rope, null);
+    inkText(ctx, text, tx, ry + 18, 13, P.ink, null, 'normal');
+    if (icon === 'dog') inkText(ctx, 'touch on the leash snaps it', tx, ry + 34, 13, P.ink, null, 'normal');
+  }
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 0.8;
+  inkText(ctx, 'Tip: hold ← or → to keep circling', W / 2, b.y + 460, 13, P.ink, null, 'normal');
+  ctx.globalAlpha = 1;
+  drawMenuButtons(ctx, menu);
+}
+
+function drawLegendIcon(ctx, icon, x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (icon === 'ball') {
+    const sp = art.ball;
+    ctx.fillStyle = P.shadow;
+    ctx.beginPath(); ctx.ellipse(1.6, 4, CONFIG.BALL_RADIUS * 1.3, CONFIG.BALL_RADIUS, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.scale(1.4, 1.4);
+    ctx.drawImage(sp.c, -sp.w / 2, -sp.h / 2, sp.w, sp.h);
+  } else if (icon === 'blanket') {
+    const sp = art.tuck;
+    ctx.rotate(-Math.PI / 2);
+    ctx.scale(1.1, 1.1);
+    ctx.drawImage(sp.c, -sp.w / 2, -sp.h / 2, sp.w, sp.h);
+  } else if (icon === 'bath') {
+    const sp = art.bath;
+    ctx.scale(0.58, 0.58);
+    ctx.drawImage(sp.c, -sp.ox, -sp.oy, sp.w, sp.h);
+  } else {
+    const sp = art.dogs[0];
+    ctx.rotate(-0.4);
+    ctx.drawImage(sp.c, -sp.ox, -sp.oy, sp.w, sp.h);
+  }
+  ctx.restore();
 }
 
 // ---------- game over: Zoe flops into a nap pose, then the card slides in ----------
@@ -634,7 +913,7 @@ function startNap(game) {
   napRig.reset();
 }
 
-function drawGameOver(ctx, game, dt) {
+function drawGameOver(ctx, game, dt, menu) {
   const t = game.overT;
   const flop = CONFIG.NAP_FLOP_TIME;
   const u = Math.min(1, t / flop);
@@ -668,16 +947,24 @@ function drawGameOver(ctx, game, dt) {
     fx.puff(nap.cx, nap.cy + 8, 7, P.dust, 60, 0.5, 5);
   }
 
-  if (t >= CONFIG.NAP_CARD_DELAY) drawNapCard(ctx, game, t);
+  if (t >= CONFIG.NAP_CARD_DELAY) drawNapCard(ctx, game, t, menu);
   drawZs(ctx, p, t - flop, sc);
 }
 
-function drawNapCard(ctx, game, t) {
+function drawNapCard(ctx, game, t, menu) {
   const ct = Math.min(1, (t - CONFIG.NAP_CARD_DELAY) / 0.25);
-  const lines = ['Score ' + game.score, (game.newBest ? 'New best! ' : 'Best ') + game.best, NAP_CAPTION[game.napPose] || ''];
-  lines.push(game.canRestart() ? 'tap to restart' : '');
+  const dy = motion.reduced ? 0 : (1 - ct) * 14; // reduced motion: fade in place, no slide
   ctx.globalAlpha = ct;
-  drawCard(ctx, art.cardOver, 'Zoe naps', lines, nap.cardY + (1 - ct) * 14, false);
+  const b = placeCard(ctx, art.cardOver, nap.cardY + dy, false);
+  ctx.textAlign = 'center';
+  inkText(ctx, 'Zoe naps', W / 2, b.y + 50, 34, P.rope, null);
+  inkText(ctx, 'Score ' + game.score, W / 2, b.y + 90, 20, P.ink, null);
+  inkText(ctx, (game.newBest ? 'New best! ' : 'Best ') + game.best, W / 2, b.y + 118, game.newBest ? 19 : 17, game.newBest ? P.rope : P.ink, null, game.newBest ? 'bold' : 'normal');
+  inkText(ctx, NAP_CAPTION[game.napPose] || '', W / 2, b.y + 144, 14, P.ink, null, 'normal');
+  ctx.save();
+  ctx.translate(0, dy);
+  drawMenuButtons(ctx, menu, ct);
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 

@@ -7,6 +7,7 @@ import { Input } from './input.js';
 import { createLoop } from './loop.js';
 import { unlockAudio } from './audio.js';
 import { Game } from './game/round.js';
+import { Menu } from './menu.js';
 import { render } from './render.js';
 
 const canvas = document.getElementById('game');
@@ -16,6 +17,7 @@ const ctx = canvas.getContext('2d', { alpha: false });
 const view = new View(canvas, stage);
 const input = new Input(view);
 const game = new Game(input);
+const menu = new Menu(game, input);
 const debug = { on: new URLSearchParams(location.search).has('debug'), fps: 60 };
 
 // Handy for live tuning from the browser console: doxie.config.ZOE_SPEED = 170
@@ -23,6 +25,8 @@ globalThis.doxie = {
   ...globalThis.doxie,
   config: CONFIG,
   game,
+  menu,
+  input,
   isExtension,
   // Test helpers for the Phase 4A extras (console only):
   spawnBall: () => game.ball.spawn(game.zoe, game.bath),
@@ -30,31 +34,14 @@ globalThis.doxie = {
   endRound: () => { if (game.scene === 'play') game.timeLeft = 0.01; },
 };
 
-// "Tap to play" / restart / resume. Audio is unlocked inside the gesture.
-function proceed() {
-  if (game.paused) {
-    game.paused = false;
-    input.enabled = game.scene === 'play';
-  } else if (game.scene === 'title') {
-    game.start();
-  } else if (game.canRestart()) {
-    game.start();
-  }
-}
-
-input.onPointerDown = () => {
-  unlockAudio(); // mouse: pointerdown is the gesture that counts
-  if (game.scene === 'over') game.downSinceOver = true;
-};
-input.onPointerUp = () => {
-  unlockAudio(); // touch: pointerup is the gesture that counts
-  if (game.scene === 'over' && !game.downSinceOver) return; // finger held from gameplay
-  if (game.scene !== 'play' || game.paused) proceed();
-};
-input.onConfirmKey = () => {
-  unlockAudio();
-  if (game.scene !== 'play' || game.paused) proceed();
-};
+// Menus and HUD buttons get first look at taps and keys (see menu.js).
+// Audio is unlocked inside each gesture.
+input.uiDown = (e, x, y) => menu.pointerDown(e, x, y);
+input.uiUp = (e, x, y) => menu.pointerUp(e, x, y);
+input.uiMove = (x, y) => menu.pointerMove(x, y);
+input.uiKey = (e) => menu.key(e);
+input.onPointerDown = () => { unlockAudio(); };  // mouse: pointerdown is the gesture that counts
+input.onPointerUp = () => { unlockAudio(); };    // touch: pointerup is the gesture that counts
 input.onDebugKey = () => { debug.on = !debug.on; };
 window.addEventListener('touchend', unlockAudio, { passive: true });
 
@@ -64,16 +51,18 @@ const loop = createLoop(
   (dt) => game.update(dt),
   (frameDt) => {
     if (frameDt > 0) debug.fps += (1 / frameDt - debug.fps) * 0.05;
-    render(ctx, view, game, input, debug);
+    render(ctx, view, game, input, debug, menu);
   },
 );
 
-// Pause when hidden (tab switch, phone lock, popup closing).
+// Pause when hidden (tab switch, phone lock, popup closing) or when the
+// window loses focus. The pause card waits for Resume.
 function onHide() {
-  game.pause();
-  input.enabled = false;
+  menu.pause();
+  input.clear();
   loop.stop();
 }
+window.addEventListener('blur', () => menu.pause());
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') onHide();
   else loop.start();

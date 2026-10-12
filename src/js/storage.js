@@ -1,4 +1,4 @@
-// Best-score storage: chrome.storage.local inside the extension,
+// Saved settings (best score, mute, how-to seen): chrome.storage.local inside the extension,
 // localStorage on the web. Never throws.
 
 const KEY = 'doxieArcade.best';
@@ -60,5 +60,32 @@ export async function setMuted(value) {
     localStorage.setItem(MUTE_KEY, value ? '1' : '0');
   } catch {
     // storage blocked: mute just won't persist
+  }
+}
+
+// Simple on/off flags (e.g. "has seen the how-to card"). Same adapter.
+export async function getFlag(key) {
+  try {
+    const store = chromeStore();
+    if (store) {
+      const res = await store.get(key);
+      return res[key] === true;
+    }
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function setFlag(key, value) {
+  try {
+    const store = chromeStore();
+    if (store) {
+      await store.set({ [key]: !!value });
+      return;
+    }
+    localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    // storage blocked: the flag just won't persist
   }
 }

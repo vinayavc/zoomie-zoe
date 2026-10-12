@@ -5,6 +5,8 @@
 // Reads game state each frame and remembers just enough to spot what changed.
 
 import { P } from './palette.js';
+import { CONFIG } from '../../config.js';
+import { motion } from '../platform.js';
 
 const CONFETTI = [P.sock, P.cheese, P.paper, P.pink, P.apricot, P.sun, P.teal];
 const BALL_COLORS = [P.ball, P.ballSeam, P.ballDark, P.sun];
@@ -29,6 +31,7 @@ export class Fx {
   }
 
   puff(x, y, n, color, speed, life, r) {
+    if (motion.reduced) { n = Math.max(1, Math.round(n * CONFIG.REDUCED_CONFETTI)); speed *= 0.6; }
     for (let k = 0; k < n; k++) {
       const p = this.puffs.find((q) => !q.on);
       if (!p) return;
@@ -61,6 +64,10 @@ export class Fx {
   }
 
   _spawn(x, y, n, colors, speed, life) {
+    if (motion.reduced) { // prefers-reduced-motion: fewer, slower scraps
+      n = Math.max(1, Math.round(n * CONFIG.REDUCED_CONFETTI));
+      speed *= 0.6;
+    }
     for (let k = 0; k < n; k++) {
       const p = this.parts.find((q) => !q.on);
       if (!p) return;

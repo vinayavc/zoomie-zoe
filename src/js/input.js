@@ -2,10 +2,14 @@
 //   Touch:    floating thumb-pad (follows the thumb past its edge);
 //             action = second finger tap or the on-screen button
 //   Mouse:    Zoe steers toward the cursor; action = click
-//   Keyboard: left/right (A/D) head Zoe toward screen-left/right; up/down (W/S) unused; action = Space
+//   Keyboard: a tap of left/right (A/D) heads Zoe toward screen-left/right;
+//             holding past KEY_HOLD_LOOP_DELAY keeps her curving (a circle);
+//             up/down (W/S) unused; action = Space
 // Whichever device was used last is in charge of steering.
+// Menus (menu.js) get first look at keys and at taps on their buttons.
 
 import { CONFIG } from '../config.js';
+import { wrapAngle } from './geom.js';
 
 // Keyboard steering: left/right head her toward screen-left/right; up/down are unused for now
 // (still listed so the page doesn't scroll).
@@ -28,12 +32,20 @@ export class Input {
     this.buttonId = -1;          // touch currently holding the stretch button
     this.buttonDown = false;
     this.actionQueued = false;
+    // Hold-to-loop (keys): when each key went down, and which way she curves
+    // once the hold passes the delay (+1 = clockwise on screen, -1 = counterclockwise).
+    this.keyDownAt = { left: 0, right: 0 };
+    this.loopSign = 0;
+    this.looping = false;
 
     // Hooks set by main.js
     this.onPointerDown = () => {};
     this.onPointerUp = () => {};
-    this.onConfirmKey = () => {};
     this.onDebugKey = () => {};
+    this.uiDown = () => false;   // (e, x, y) -> true if a menu/HUD button took the press
+    this.uiUp = () => {};
+    this.uiMove = () => {};
+    this.uiKey = () => false;    // (e) -> true if the menu used the key
 
     this._p = { x: 0, y: 0 };
     this._bind();
@@ -62,6 +74,8 @@ export class Input {
     this.buttonId = -1;
     this.buttonDown = false;
     this.actionQueued = false;
+    this.loopSign = 0;
+    this.looping = false;
   }
 
   consumeAction() {
@@ -70,16 +84,32 @@ export class Input {
     return a;
   }
 
-  // Desired heading for a head at (hx, hy), or NaN for "keep going straight".
-  // (`heading` is passed in but not needed by the current schemes.)
+  // Desired heading for a head at (hx, hy) facing `heading`, or NaN for
+  // "keep going straight". Called once per simulation step.
   steerAngle(hx, hy, heading) {
+    this.looping = false;
     if (this.mode === 'keys') {
-      // Left = head toward screen-left (angle pi), right = screen-right (angle 0).
-      // Zoe turns there at her normal turn rate, the shortest way.
+      // Tap: left = head toward screen-left (angle pi), right = screen-right (angle 0),
+      // turning at her normal rate, the shortest way.
+      // Hold past KEY_HOLD_LOOP_DELAY: keep curving the way she was already
+      // turning, so a held key draws a circle and never snaps into a reversal.
       // No key, or both keys, = keep going straight.
       const x = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0);
       if (x === 0) return NaN;
-      return x > 0 ? 0 : Math.PI;
+      const dir = x > 0 ? 'right' : 'left';
+      const target = x > 0 ? 0 : Math.PI;
+      const held = (performance.now() - this.keyDownAt[dir]) / 1000;
+      if (held < CONFIG.KEY_HOLD_LOOP_DELAY) {
+        // same sign rule as turnToward(), so the remembered direction is the real one
+        const d = wrapAngle(target - heading);
+        if (Math.abs(d) > 0.02) this.loopSign = d > 0 ? 1 : -1;
+        return target;
+      }
+      // Already facing that side when the key went down: <- curves
+      // counterclockwise on screen, -> clockwise.
+      if (this.loopSign === 0) this.loopSign = x > 0 ? 1 : -1;
+      this.looping = true;
+      return heading + this.loopSign * Math.PI / 2; // always more than one step away: full turn rate
     }
     if (this.mode === 'mouse') {
       const dx = this.mouse.x - hx, dy = this.mouse.y - hy;
@@ -101,6 +131,12 @@ export class Input {
   _down(e) {
     if (e.cancelable) e.preventDefault();
     const p = this.view.toArena(e.clientX, e.clientY, this._p);
+    if (e.pointerType === 'mouse') { this.mode = 'mouse'; this.mouse.x = p.x; this.mouse.y = p.y; }
+    else this.usedTouch = true;
+    if (this.uiDown(e, p.x, p.y)) {
+      this.onPointerDown(e);
+      return;
+    }
     if (e.pointerType === 'mouse') {
       this.mode = 'mouse';
       this.mouse.x = p.x; this.mouse.y = p.y;
@@ -130,6 +166,7 @@ export class Input {
     if (e.pointerType === 'mouse') {
       this.mode = 'mouse';
       this.mouse.x = p.x; this.mouse.y = p.y;
+      this.uiMove(p.x, p.y);
       return;
     }
     const pad = this.pad;
@@ -155,7 +192,11 @@ export class Input {
       this.buttonId = -1;
       this.buttonDown = false;
     }
-    if (e.type === 'pointerup') this.onPointerUp(e);
+    if (e.type === 'pointerup') {
+      const p = this.view.toArena(e.clientX, e.clientY, this._p);
+      this.uiUp(e, p.x, p.y);
+      this.onPointerUp(e);
+    }
   }
 
   _key(e, down) {
@@ -170,18 +211,27 @@ export class Input {
       this.onDebugKey();
       return;
     }
+    if (down && this.uiKey(e)) {
+      e.preventDefault();
+      return;
+    }
     if (dir) {
+      if (down && (dir === 'left' || dir === 'right')) {
+        // A fresh press (or the first repeat after a pause cleared the keys)
+        // restarts the hold timer: tap again to go back to heading-mode.
+        if (!e.repeat || !this.keys[dir]) {
+          this.keyDownAt[dir] = performance.now();
+          this.loopSign = 0;
+        }
+        this.mode = 'keys';
+      }
       this.keys[dir] = down;
-      if (down && (dir === 'left' || dir === 'right')) this.mode = 'keys';
       e.preventDefault();
       return;
     }
     if (e.code === 'Space' || e.code === 'Enter') {
       e.preventDefault();
-      if (down && !e.repeat) {
-        if (this.enabled && e.code === 'Space') this.actionQueued = true;
-        this.onConfirmKey(e);
-      }
+      if (down && !e.repeat && this.enabled && e.code === 'Space') this.actionQueued = true;
     }
   }
 }

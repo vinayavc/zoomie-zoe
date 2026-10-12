@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Doxie Arcade",
-  "version": "0.2.0",
-  "description": "Greybox prototype of a dachshund arcade mini-game: lasso socks with Zoe's leash.",
+  "name": "Zoomie Zoe",
+  "version": "1.0.0",
+  "description": "Help Zoe the mini dachshund lasso socks with her leash. A cozy 60-second arcade game in watercolor and paper.",
   "action": {
     "default_popup": "index.html",
-    "default_title": "Play Doxie Arcade",
+    "default_title": "Play Zoomie Zoe",
     "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
   },
   "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
