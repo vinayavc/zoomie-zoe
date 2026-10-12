@@ -36,6 +36,7 @@ const C = {
   iron: '#2B2536',
   ironLight: '#5C5470',
   blushGhost: '#F2A7B6',
+  bucketLight: '#C7AEF0',  // highlight on the violet candy bucket
 };
 const LEAVES = ['#D9662A', '#E8973A', '#B84A2A', '#C98A2E', '#9A4E2A', '#E2B046'];
 
@@ -51,9 +52,10 @@ export default {
     indigo: '#1E1838', teal: '#E08A3C', pink: '#8E6FB0', sun: C.moon,
     // leaf piles (confetti uses these too)
     sherpa: '#8A4A24', sherpaDark: '#5E2E16', sherpaLight: '#E0913E',
-    // wrapped candy: orange with purple stripes; the pail is pumpkin orange
+    // wrapped candy: orange with purple stripes. The pail is a violet bucket
+    // (not orange), so it never reads as the round orange pumpkin power-up.
     sock: '#F08A2E', sockStripe: '#8A5CC8',
-    shoe: C.pumpkin, shoeDark: C.pumpkinDark, sole: C.night,
+    shoe: '#9A70DC', shoeDark: '#5B3A9A', sole: C.night,
     // pumpkin ball
     ball: C.pumpkin, ballDark: C.pumpkinDark, ballSeam: '#F8C27A',
     // cauldron brew (also the slimy leash after touching it)
@@ -588,7 +590,8 @@ function bakePail(k, paper) {
   g.translate(S / 2, S / 2 + 1.5);
   g.lineJoin = 'round';
   g.lineCap = 'round';
-  const body = polygon(0, 3, 11, 30, null, 12, 9.6);
+  // a bucket: wide flat rim at the top, tapering to a rounded base
+  const body = smoothPts([[-11.6, -5.4], [11.6, -5.4], [9.4, 11.6], [-9.4, 11.6]], 1);
   const handle = smoothPts([[-10.5, -1], [-9, -10.5], [0, -14], [9, -10.5], [10.5, -1], [8.6, -1], [7.4, -9], [0, -11.8], [-7.4, -9], [-8.6, -1]], 1);
   stickerBack(g, [handle, body], rng, 2.2);
 
@@ -608,16 +611,11 @@ function bakePail(k, paper) {
   g.clip();
   g.fillStyle = P.shoe;
   fillPts(g, body);
-  g.fillStyle = C.pumpkinLight;
-  g.globalAlpha = 0.55;
-  g.beginPath(); g.ellipse(-1, 2, 4.6, 9, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = C.bucketLight;
+  g.globalAlpha = 0.5;
+  g.beginPath(); g.ellipse(-5.5, 3, 2.6, 7.5, 0.1, 0, Math.PI * 2); g.fill();
   g.globalAlpha = 1;
-  wash(g, polygon(5, 7, 7, 7, rng), P.shoeDark, rng, { layers: 5, alpha: 0.12 });
-  g.strokeStyle = P.shoeDark;
-  g.lineWidth = 0.8;
-  for (const s of [-1, 1]) {
-    g.beginPath(); g.moveTo(s * 5, -6); g.quadraticCurveTo(s * 8.5, 3, s * 5, 12.5); g.stroke();
-  }
+  wash(g, polygon(5, 7, 7, 7, rng), P.shoeDark, rng, { layers: 5, alpha: 0.14 });
   // rim of the pail opening
   g.fillStyle = 'rgba(0,0,0,0.0)';
   g.restore();
@@ -625,10 +623,11 @@ function bakePail(k, paper) {
   g.lineWidth = 1.1;
   pathPts(g, body);
   g.stroke();
-  g.fillStyle = C.pumpkinDark;
-  g.beginPath(); g.ellipse(0, -5.3, 7.6, 1.8, 0, 0, Math.PI); g.fill(); g.stroke();
-  // jack-o'-lantern face
-  g.fillStyle = P.sole;
+  // rolled rim along the top
+  g.fillStyle = P.shoeDark;
+  g.beginPath(); g.roundRect(-12.4, -6.6, 24.8, 3, 1.4); g.fill(); g.stroke();
+  // jack-o'-lantern face, lit from inside so it glows gold on the violet
+  g.fillStyle = C.star;
   g.beginPath(); g.moveTo(-6.5, 1.6); g.lineTo(-4.2, -2.2); g.lineTo(-2, 1.6); g.closePath(); g.fill();
   g.beginPath(); g.moveTo(6.5, 1.6); g.lineTo(4.2, -2.2); g.lineTo(2, 1.6); g.closePath(); g.fill();
   g.beginPath();
@@ -695,6 +694,9 @@ function bakeGhost(variant, k, paper) {
   const dark = variant ? P.dog2Dark : P.dogDark;
   const cx = S / 2 - 1, cy = S / 2;
   g.translate(cx, cy);
+  // Trimmed so the sheet is about the size of the hitbox (DOG_RADIUS 12) and
+  // the Bedroom dogs: untrimmed it ran about 35 x 28 px.
+  g.scale(0.82, 0.82);
   g.lineJoin = 'round';
   g.lineCap = 'round';
 

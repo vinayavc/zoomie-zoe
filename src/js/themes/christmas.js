@@ -27,6 +27,9 @@ const C = {
   plaidRed: '#A8343A', plaidGreen: '#2F5A3A', plaidGold: '#E3B95A', plaidCream: '#F2E6D2',
   velvet: '#9E2A33', gold: '#D9A93A', goldDark: '#9C7424', goldLight: '#F6DC8E',
   holly: '#2F6B45', hollyDark: '#1F4A2F', berry: '#C8323C',
+  // silver-blue glass ornaments (kept off red and gold: those are the sweater and the jingle ball)
+  silver: '#D9E1E8', silverDark: '#7E8E9C',
+  pupHalo: '#F7EEDC',        // cream paper halo so the pups read on the wood floor
 };
 
 export default {
@@ -40,7 +43,7 @@ export default {
     // confetti and the blanket fallback colors
     sherpa: C.plaidRed, sherpaDark: '#6E2622', sherpaLight: C.plaidCream,
     // items: ornament (sock), present (shoe), cheese
-    sock: '#C8323C', sockStripe: C.gold, shoe: '#2F7F94', shoeDark: '#1F5A6B', sole: C.gold,
+    sock: '#86A9D8', sockStripe: C.silver, shoe: '#2F7F94', shoeDark: '#1F5A6B', sole: C.gold,
     // jingle ball
     ball: C.gold, ballDark: C.goldDark, ballSeam: '#5A3A1A',
     // slush puddle
@@ -48,7 +51,8 @@ export default {
     foam: C.snow, foamRim: 'rgba(94,118,134,0.5)', ripple: 'rgba(255,255,255,0.75)',
     bubble: 'rgba(238,243,247,0.9)', bubbleRim: 'rgba(94,118,134,0.8)',
     // reindeer pups
-    dog: '#7A5440', dogDark: '#57392A', dogLight: '#B08A6E',
+    // dark cocoa + charcoal with a cream muzzle: darker than the floorboards
+    dog: '#5A3A2C', dogDark: '#3E271D', dogLight: '#E6CFAE',
     dog2: '#5E4C45', dog2Dark: '#3F322D', dogInk: '#2A1D17', dogEye: '#1E1612',
     // the leash: candy-cane red with a cream twist, so it reads on the rug
     rope: '#B8323A', ropeLight: '#F4E4CC',
@@ -588,16 +592,16 @@ function bakeItem(type, k, paper) {
     color = P.sock;
     extra = [[-3.2, -9.6], [3.2, -9.6], [3.2, -6], [-3.2, -6]];
     details = () => {
-      // gold band with a zigzag
-      g.fillStyle = C.gold;
+      // silver band with a zigzag
+      g.fillStyle = P.sockStripe;
       g.fillRect(-10, 0.2, 20, 3.4);
-      g.strokeStyle = C.knit;
+      g.strokeStyle = C.silverDark;
       g.lineWidth = 0.8;
       g.beginPath();
       for (let i = 0; i <= 8; i++) g.lineTo(-10 + i * 2.5, i % 2 ? 0.8 : 3);
       g.stroke();
       // glassy shine
-      wash(g, polygon(4, 6, 6, 7, rng), '#3A0F14', rng, { layers: 5, alpha: 0.08 });
+      wash(g, polygon(4, 6, 6, 7, rng), '#1E3350', rng, { layers: 5, alpha: 0.1 });
       g.fillStyle = 'rgba(255,255,255,0.75)';
       g.beginPath(); g.ellipse(-4, -3, 2.4, 1.3, -0.7, 0, Math.PI * 2); g.fill();
       g.fillStyle = 'rgba(255,255,255,0.5)';
@@ -636,7 +640,7 @@ function bakeItem(type, k, paper) {
     };
   }
   const outer = extra ? [shape, extra] : [shape];
-  const rims = outer.map((s) => tornOutline(offsetPts(s, 2.4), 1.4, rng));
+  const rims = outer.map((s) => tornOutline(outset(s, 2.4), 1.4, rng));
 
   g.fillStyle = P.shadow;
   g.save(); g.translate(1.6, 2.2); for (const r of rims) fillPts(g, r); g.restore();
@@ -645,13 +649,13 @@ function bakeItem(type, k, paper) {
 
   // the ornament cap / the present's bow sit under the ink of the main shape
   if (type === 'sock') {
-    g.fillStyle = C.gold;
+    g.fillStyle = C.silver;
     fillPts(g, extra);
     g.strokeStyle = P.ink;
     g.lineWidth = 1;
     pathPts(g, extra);
     g.stroke();
-    g.strokeStyle = C.goldDark;
+    g.strokeStyle = C.silverDark;
     g.lineWidth = 1.1;
     g.beginPath(); g.arc(0, -11.2, 1.9, Math.PI * 0.9, Math.PI * 2.1); g.stroke();
   }
@@ -719,6 +723,18 @@ function holly(g, x, y) {
 }
 
 // ---------------------------------------------------------------- reindeer pups
+// Grow a shape outward by d. offsetPts pushes some windings inward (e.g. the
+// polygon() ovals), so try one sign and flip it if the shape shrank.
+function area(pts) {
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
+  return Math.abs(a);
+}
+function outset(pts, d) {
+  const o = offsetPts(pts, d);
+  return area(o) >= area(pts) ? o : offsetPts(pts, -d);
+}
+
 // Brown pups seen from above, facing +x, wearing felt antlers and a bell collar.
 function bakePup(variant, k, paper) {
   const S = 50;
@@ -748,9 +764,9 @@ function bakePup(variant, k, paper) {
   const all = [tailPts, bodyPts, headPts, snoutPts, ...ears, ...antlers];
 
   g.fillStyle = P.shadow;
-  g.save(); g.translate(2, 2.8); for (const s of all) fillPts(g, offsetPts(s, 1.6)); g.restore();
-  g.fillStyle = P.paper;
-  for (const s of all) fillPts(g, tornOutline(offsetPts(s, 1.6), 0.9, rng));
+  g.save(); g.translate(2, 2.8); for (const s of all) fillPts(g, outset(s, 2.6)); g.restore();
+  g.fillStyle = C.pupHalo;
+  for (const s of all) fillPts(g, tornOutline(outset(s, 2.6), 0.9, rng));
 
   const part = (pts, fill, ink = P.dogInk) => {
     g.fillStyle = fill;
