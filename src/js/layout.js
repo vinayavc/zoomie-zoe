@@ -11,7 +11,7 @@ export const CARDS = {
   title: { w: 324, h: 512, cy: 312 },
   howto: { w: 368, h: 540, cy: 324 },
   pause: { w: 290, h: 340, cy: H / 2 },
-  over: { w: 290, h: 330 },            // its centre is picked at game over (opposite her nap spot)
+  over: { w: 290, h: 304 },            // its centre is picked at game over (opposite her nap spot)
   rotate: { w: 360, h: 420, cy: H / 2 },
 };
 

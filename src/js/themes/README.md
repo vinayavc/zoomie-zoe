@@ -36,7 +36,7 @@ things look and sound like. Keep sprites about the size of the Bedroom ones
 | `bakeHideFlap(k, paper)` | → layer | The flap pulled over Zoe's head while she hides (40 × 40, facing +x; her eyes and nose should peek out at +x). Also the hiding-spot icon on the how-to card. |
 | `costume` | object | `{ hideCollar, bake, body, head }`, see below. |
 | `sfx` | object | `{ pop, catchLayer, over }`, see below. |
-| `words` | object | How-to legend text: `ball, ballTip, hide, hideTip, hazard, hazardTip, critters, critterTip, critterTip2`. |
+| `words` | object | How-to card text. `loot`: the two items in step 2, "Swing the leash round *socks & shoes*" (keep it short, about 17 characters at most). Legend: `ball, ballTip, hide, hideTip, hazard, hazardTip, critters, critterTip, critterTip2`. |
 
 A **layer** comes from `makeLayer(w, h, k)` in `art/util.js`: `{ c, g, w, h }`,
 where `g` is already scaled so you draw in arena px. `paper` is the shared
@@ -94,7 +94,8 @@ the same on every load.
 6. Draw `drawChipIcon`.
 7. Add the `sfx` twist (data first; functions if needed, or a `<name>-sfx.js`).
 8. Set `words` for the how-to legend.
-9. If you add a new file (e.g. `<name>-sfx.js`), add it to `FILES` in `src/sw.js`.
+9. If you add a new file (e.g. `<name>-sfx.js`), add it to `FILES` in `src/sw.js`
+   and run `python3 store/tools/check-precache.py`.
 10. Test: pick the theme on the title card, play a round at 400 × 600 and at the
     mobile preset, open the how-to card, finish a round (`doxie.endRound()`),
     check the nap card. Console: no errors; `doxie.art.themes` shows your bake

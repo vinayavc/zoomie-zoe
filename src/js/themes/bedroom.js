@@ -39,6 +39,7 @@ export default {
   sfx: {},                     // no sound twist
 
   words: {
+    loot: 'socks & shoes',
     ball: 'Ball', ballTip: 'grab it for the zoomies!',
     hide: 'Blankets', hideTip: 'hide under one: dogs lose you',
     hazard: 'Bath', hazardTip: 'dodge it, or your leash gets soggy',

@@ -10,7 +10,7 @@ import { CONFIG } from '../config.js';
 import { P, HAND } from './art/palette.js';
 import { bakeShared, bakeTheme, bakeButton } from './art/bake.js';
 import { CARDS, CHIP_ROW } from './layout.js';
-import { themeState, getTheme, roundsLeft } from './themes/index.js';
+import { themeState, getTheme } from './themes/index.js';
 import { isMuted } from './audio.js';
 import { ZoeRig } from './art/zoe-art.js';
 import { Fx } from './art/fx.js';
@@ -47,7 +47,7 @@ function ensureArt(ctx, now) {
     if (pendingW !== cw * 10000 + ch) { pendingW = cw * 10000 + ch; pendingSince = now; }
     else if (now - pendingSince > 200) bake(ctx);
   }
-  art = artFor(themeState.shown);
+  art = artFor(ctx, themeState.picked);
 }
 
 function bake(ctx) {
@@ -56,18 +56,37 @@ function bake(ctx) {
 }
 
 // A theme's art, baked the first time it's needed and cached after that.
-function artFor(id) {
+function artFor(ctx, id) {
   if (!themeArt[id]) {
     themeArt[id] = bakeTheme(getTheme(id), shared);
-    // handy for checking from the console: doxie.art
-    if (globalThis.doxie) {
-      globalThis.doxie.art = {
-        bakeMs: Math.round(shared.bakeMs), bakes: shared.bakeCount, k: shared.k,
-        themes: Object.fromEntries(Object.entries(themeArt).map(([t, a]) => [t, Math.round(a.themeBakeMs)])),
-      };
-    }
+    prewarm(ctx, themeArt[id]);
   }
   return themeArt[id];
+}
+
+// Bake times, for checking from the console: doxie.art (see main.js).
+export function artInfo() {
+  if (!shared) return null;
+  return {
+    bakeMs: Math.round(shared.bakeMs), bakes: shared.bakeCount, k: shared.k,
+    themes: Object.fromEntries(Object.entries(themeArt).map(([t, a]) => [t, Math.round(a.themeBakeMs)])),
+  };
+}
+
+// Draw every freshly baked sprite once, tiny, onto the game canvas, so the GPU
+// upload happens now (while a menu card is up) and not the first time the
+// sprite shows up in play (the first zoomies ball used to cost one 17-22 ms
+// frame). This runs just before the floor is blitted over the whole canvas,
+// so none of it is ever seen.
+function prewarm(ctx, a) {
+  const layers = [a.bg, a.stickers.sock, a.stickers.shoe, a.stickers.cheese, ...a.dogs,
+    a.ball, a.bath, a.bubble, a.tuck, a.glow];
+  const cos = a.costume;
+  if (cos && typeof cos === 'object') for (const v of Object.values(cos)) if (v && v.c) layers.push(v);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (const L of layers) if (L && L.c) ctx.drawImage(L.c, 0, 0, 2, 2);
+  ctx.restore();
 }
 
 export function render(ctx, view, game, input, debug, menu) {
@@ -123,9 +142,6 @@ export function render(ctx, view, game, input, debug, menu) {
 
   if (debug.on && game.scene !== 'title') drawDebug(ctx, game, debug);
 
-  // Off the clock (any card), bake the picked theme ahead of the next round,
-  // so starting a round never stalls on a bake.
-  if (game.scene !== 'play' && !themeArt[themeState.picked]) artFor(themeState.picked);
 }
 
 // ---------- juice: the caught loop glows like a fresh wash of sunlight ----------
@@ -831,7 +847,7 @@ function drawHowto(ctx, menu, dt) {
   const x0 = W / 2 - colW * 1.5 - gap;
   const steps = [
     ['1. Steer', 'drag, mouse,', 'or arrow keys'],
-    ['2. Swing', 'the leash round', 'socks & shoes'],
+    ['2. Swing', 'the leash round', art.theme.words.loot],
     ['3. Cinch!', 'CINCH button,', 'click or Space'],
   ];
   for (let i = 0; i < 3; i++) {
@@ -1063,12 +1079,6 @@ function drawNapCard(ctx, game, t, menu) {
   chipCaption(ctx, menu, b.y - dy + CHIP_ROW.over - 36);
   drawMenuButtons(ctx, menu, ct);
   ctx.restore();
-  // the 3-round rule: say when it kicked in, or how many rounds are left
-  const left = roundsLeft();
-  let note = '';
-  if (themeState.resetNote) note = 'Back to the bedroom! Pick a theme any time.';
-  else if (left > 0) note = left + (left === 1 ? ' more round' : ' more rounds') + ' here, then back to the bedroom';
-  if (note) inkText(ctx, note, W / 2, b.y + 314, 12.5, themeState.resetNote ? P.rope : P.ink, null, themeState.resetNote ? 'bold' : 'normal');
   ctx.globalAlpha = 1;
 }
 

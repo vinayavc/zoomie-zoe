@@ -8,8 +8,8 @@ import { createLoop } from './loop.js';
 import { unlockAudio } from './audio.js';
 import { Game } from './game/round.js';
 import { Menu } from './menu.js';
-import { render } from './render.js';
-import { themeState, pickTheme, themeRoundEnded, THEME_IDS } from './themes/index.js';
+import { render, artInfo } from './render.js';
+import { themeState, pickTheme, THEME_IDS } from './themes/index.js';
 
 const canvas = document.getElementById('game');
 const stage = document.getElementById('stage');
@@ -35,10 +35,10 @@ globalThis.doxie = {
   endRound: () => { if (game.scene === 'play') game.timeLeft = 0.01; },
   // Theme helpers (T1): doxie.themes.state, doxie.themes.pick('spring')
   themes: { state: themeState, pick: pickTheme, ids: THEME_IDS },
+  // Bake times in ms: { bakeMs, bakes, k, themes: { bedroom: 52, ... } }
+  get art() { return artInfo(); },
 };
 
-// Count finished rounds for the theme reset rule.
-game.onRoundEnd = () => themeRoundEnded();
 
 // Menus and HUD buttons get first look at taps and keys (see menu.js).
 // Audio is unlocked inside each gesture.

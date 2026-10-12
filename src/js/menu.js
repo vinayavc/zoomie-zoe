@@ -8,7 +8,7 @@ import { CONFIG } from '../config.js';
 import { buttonsFor, hitButton } from './layout.js';
 import { isMuted, toggleMute, unlockAudio } from './audio.js';
 import { getFlag, setFlag } from './storage.js';
-import { THEME_IDS, pickTheme, themeRoundStarted, themeState } from './themes/index.js';
+import { THEME_IDS, pickTheme, themeState } from './themes/index.js';
 import { screenShape } from './platform.js';
 
 const HOWTO_KEY = 'doxieArcade.howtoSeen';
@@ -120,7 +120,6 @@ export class Menu {
 
   _start() {
     this.howto = '';
-    themeRoundStarted();
     this.game.start();
   }
 

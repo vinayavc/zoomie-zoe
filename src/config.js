@@ -156,7 +156,6 @@ export const CONFIG = {
 
   // ---- Themes and the sideways-phone card (T1) ----
   THEME_DEFAULT: 'bedroom',
-  THEME_ROUNDS: 3,          // after this many finished rounds in another theme, back to the Bedroom
   THEME_CHIP_W: 60,         // picker chip size (arena px; 48 high = about 45 CSS px on a 375 px phone)
   THEME_CHIP_H: 48,
   THEME_CHIP_GAP: 8,

@@ -3,9 +3,10 @@
 //
 // RELEASE RULE: bump CACHE_VERSION every time you publish changed files.
 // Players' browsers then download a fresh copy and delete the old one.
-// If you add a new .js file, add it to FILES too (see docs/pwa-notes.md).
+// If you add a new .js file, add it to FILES too (see docs/pwa-notes.md), then
+// run: python3 store/tools/check-precache.py
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = 'zoomie-zoe-' + CACHE_VERSION;
 
 // Every file the game needs, relative to this file. Fetched on the first visit.
@@ -15,6 +16,7 @@ const FILES = [
   'style.css',
   'config.js',
   'manifest.webmanifest',
+  'icons/32.png',
   'icons/180.png',
   'icons/192.png',
   'icons/512.png',
