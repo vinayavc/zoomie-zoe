@@ -59,3 +59,13 @@ The play area stays exactly the same size, so scores stay fair.
 - No inline scripts, no remote assets, no per-frame filters.
 - New files are added to `sw.js` FILES. Run `store/tools/check-precache.py`. Builder A bumps `CACHE_VERSION` at the end.
 - Ports: A uses `localhost:8742`, B uses `localhost:8745`, C uses `localhost:8746`. Each builder closes only its own tab.
+
+## Launch decisions (Vinny, Oct 12, 2026)
+- **Splash and status-bar colour:** indigo `#3F4A73`, as now.
+- **iOS:** the installed app and Safari keeping separate best scores is fine. Nothing to build.
+- **Publishing:** GitHub Actions publishes `/src` to GitHub Pages on every push to `main`.
+- **Go-live:** only after Vinny approves the fixed build locally.
+
+## Logged for after launch
+- `art/util.js` `offsetPts` pushes outlines inward for `polygon()` shapes, so the intended paper rims and shadows are hidden. A global fix changes every theme's look; it's deferred. (Christmas has a local `outset()` workaround.)
+- Leash snaps remain the main source of hits (about 20 per reckless-bot round). If players find rounds snap-heavy, try `DOG_SNAP_PAD` or making wandering dogs avoid the leash.
