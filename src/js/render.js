@@ -1,13 +1,16 @@
 // Watercolor + paper-cutout drawing. Everything is drawn in arena coordinates
 // (400 x 600); the view scales it to the screen.
-// Slow painting (paper, bedroom, stickers, dogs, cards) is baked once in
-// art/bake.js; each frame only blits those and draws Zoe, the leash and juice.
+// Slow painting is baked once: shared art (paper, cards, buttons, chips, fur)
+// in art/bake.js, and each theme's art (floor, items, critters ...) by its
+// module in themes/, the first time that theme is shown. Each frame only blits
+// those and draws Zoe, the leash and juice.
 // No ctx.filter or shadowBlur here: shadows are hard offset copies.
 
 import { CONFIG } from '../config.js';
 import { P, HAND } from './art/palette.js';
-import { bakeAll, bakeButton } from './art/bake.js';
-import { CARDS } from './layout.js';
+import { bakeShared, bakeTheme, bakeButton } from './art/bake.js';
+import { CARDS, CHIP_ROW } from './layout.js';
+import { themeState, getTheme, roundsLeft } from './themes/index.js';
 import { isMuted } from './audio.js';
 import { ZoeRig } from './art/zoe-art.js';
 import { Fx } from './art/fx.js';
@@ -16,13 +19,16 @@ import { motion } from './platform.js';
 const W = CONFIG.ARENA_W, H = CONFIG.ARENA_H;
 const MONO = 'ui-monospace, Menlo, monospace';
 
-let art = null;
+let shared = null;          // art every theme shares
+const themeArt = {};        // theme id -> shared + that theme's art (baked on first use)
+let art = null;             // the art for the theme on screen now
 let pendingW = 0, pendingSince = 0;
 let lastNow = 0;
 let lastScene = '';
 let clock = 0;
 const rig = new ZoeRig();
 const titleRig = new ZoeRig();
+const rotRig = new ZoeRig();
 const napRig = new ZoeRig();
 const howRigs = [new ZoeRig(), new ZoeRig(), new ZoeRig()];
 const fx = new Fx();
@@ -32,20 +38,36 @@ const titlePose = { x: 0, y: 0, heading: 0, segX: new Float32Array(CONFIG.SEG_CO
 const leashX = new Float32Array(1100), leashY = new Float32Array(1100);
 
 // Bake on first use; re-bake once the canvas size has been stable for 200 ms.
+// A re-bake drops every cached theme; only the one on screen is baked again.
 function ensureArt(ctx, now) {
   const cw = ctx.canvas.width, ch = ctx.canvas.height;
-  if (!art) {
+  if (!shared) {
     bake(ctx);
-  } else if (art.pxW !== cw || art.pxH !== ch) {
+  } else if (shared.pxW !== cw || shared.pxH !== ch) {
     if (pendingW !== cw * 10000 + ch) { pendingW = cw * 10000 + ch; pendingSince = now; }
     else if (now - pendingSince > 200) bake(ctx);
   }
+  art = artFor(themeState.shown);
 }
 
 function bake(ctx) {
-  art = bakeAll(ctx, ctx.canvas.width / W);
-  // handy for checking from the console: doxie.art
-  if (globalThis.doxie) globalThis.doxie.art = { bakeMs: Math.round(art.bakeMs), bakes: art.bakeCount, k: art.k };
+  shared = bakeShared(ctx, ctx.canvas.width / W);
+  for (const id in themeArt) delete themeArt[id];
+}
+
+// A theme's art, baked the first time it's needed and cached after that.
+function artFor(id) {
+  if (!themeArt[id]) {
+    themeArt[id] = bakeTheme(getTheme(id), shared);
+    // handy for checking from the console: doxie.art
+    if (globalThis.doxie) {
+      globalThis.doxie.art = {
+        bakeMs: Math.round(shared.bakeMs), bakes: shared.bakeCount, k: shared.k,
+        themes: Object.fromEntries(Object.entries(themeArt).map(([t, a]) => [t, Math.round(a.themeBakeMs)])),
+      };
+    }
+  }
+  return themeArt[id];
 }
 
 export function render(ctx, view, game, input, debug, menu) {
@@ -92,12 +114,18 @@ export function render(ctx, view, game, input, debug, menu) {
   if (game.scene === 'play' && !game.paused) drawTouchControls(ctx, input, game);
 
   const screen = menu.screen();
-  if (screen === 'howto') drawHowto(ctx, menu, dt);
+  if (screen === 'howto' || (screen === 'rotate' && menu.howto)) drawHowto(ctx, menu, dt);
   else if (game.scene === 'title') drawTitle(ctx, dt, menu);
   else if (game.scene === 'over') drawGameOver(ctx, game, dt, menu);
   else if (game.paused) drawPause(ctx, menu);
 
+  if (screen === 'rotate') drawRotate(ctx, dt);
+
   if (debug.on && game.scene !== 'title') drawDebug(ctx, game, debug);
+
+  // Off the clock (any card), bake the picked theme ahead of the next round,
+  // so starting a round never stalls on a bake.
+  if (game.scene !== 'play' && !themeArt[themeState.picked]) artFor(themeState.picked);
 }
 
 // ---------- juice: the caught loop glows like a fresh wash of sunlight ----------
@@ -243,22 +271,45 @@ function drawItems(ctx, game) {
   }
 }
 
-// ---------- other dogs: grey paper cutouts that waddle ----------
+// ---------- critters (the Bedroom's other dogs): paper cutouts that waddle ----------
+// A theme's critterMotion changes only how they look moving: 'waddle' (rock side
+// to side), 'hop' (bounce, with a floor shadow) or 'float' (bob, with a floor
+// shadow). Position, hitbox and AI are the same in every theme.
 function drawDogs(ctx, game, frozen) {
   const r = CONFIG.DOG_RADIUS;
   const dogs = game.dogs;
+  const style = art.theme.critterMotion;
   for (let i = 0; i < dogs.length; i++) {
     const d = dogs[i];
     const sp = art.dogs[i % 2];
-    const wob = frozen ? 0 : Math.sin(clock * 13 + i * 1.7) * 0.07;
+    let wob = frozen ? 0 : Math.sin(clock * 13 + i * 1.7) * 0.07;
+    let lift = 0, sx = 1, sy = 1;
+    if (style === 'hop') {
+      const ph = (clock * CONFIG.CRITTER_HOP_HZ + i * 0.37) % 1;
+      wob = 0;
+      if (!frozen) {
+        lift = Math.sin(ph * Math.PI) * CONFIG.CRITTER_HOP_H;
+        if (ph < 0.1 || ph > 0.92) { sx = 0.9; sy = 1.1; }   // squash on landing
+        else { sx = 1.08; sy = 0.94; }                        // stretch in the air
+      }
+    } else if (style === 'float') {
+      wob = frozen ? 0 : Math.sin(clock * 2 + i) * 0.12;
+      lift = 5 + (frozen ? 0 : Math.sin(clock * 2.6 + i * 1.3) * 2.5);
+    }
+    if (lift > 0 || style !== 'waddle') {
+      const sh = 1 - lift / 30;
+      ctx.fillStyle = P.shadow;
+      ctx.beginPath(); ctx.ellipse(d.x + 1.6, d.y + 2.6, r * 1.15 * sh, r * 0.85 * sh, d.heading, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.save();
-    ctx.translate(d.x, d.y);
+    ctx.translate(d.x, d.y - lift);
     ctx.rotate(d.heading + wob);
+    if (sx !== 1) ctx.scale(sx, sy);
     ctx.drawImage(sp.c, -sp.ox, -sp.oy, sp.w, sp.h);
     ctx.restore();
     if (game.scene !== 'play') continue; // no "!"/"?" tags while she naps
-    if (d.chasing) tag(ctx, d.x, d.y - r - 9 + Math.sin(clock * 10) * 1.2, '!', P.rope);
-    else if (d.confused) tag(ctx, d.x + Math.sin(clock * 3 + i) * 1.5, d.y - r - 9, '?', P.teal);
+    if (d.chasing) tag(ctx, d.x, d.y - lift - r - 9 + Math.sin(clock * 10) * 1.2, '!', P.rope);
+    else if (d.confused) tag(ctx, d.x + Math.sin(clock * 3 + i) * 1.5, d.y - lift - r - 9, '?', P.teal);
   }
 }
 
@@ -545,8 +596,44 @@ function drawMenuButtons(ctx, menu, alpha = 1) {
   const f = menu.focused();
   for (const b of menu.buttons()) {
     if (b.kind === 'hud') continue;
-    drawButton(ctx, b, b === f, menu.isPressed(b), menu.enabled(b), alpha);
+    if (b.kind === 'chip') drawChip(ctx, b, b === f, menu.isPressed(b), alpha);
+    else drawButton(ctx, b, b === f, menu.isPressed(b), menu.enabled(b), alpha);
   }
+}
+
+// ---------- theme picker: a row of paper chips, the picked one lifted and ringed ----------
+function drawChip(ctx, b, focused, pressed, alpha) {
+  const sp = art.chips[b.themeId];
+  const picked = b.themeId === themeState.picked;
+  const off = pressed ? 1.5 : picked ? -1.5 : 0;
+  ctx.globalAlpha = alpha * (picked ? 1 : 0.88);
+  ctx.fillStyle = P.shadow;
+  roundRect(ctx, b.x + 2, b.y + 3, b.w, b.h, 9);
+  ctx.fill();
+  ctx.drawImage(sp.c, b.x - sp.pad + off, b.y - sp.pad + off, sp.w, sp.h);
+  ctx.globalAlpha = alpha;
+  if (picked) {
+    ctx.strokeStyle = P.rope;
+    ctx.lineWidth = 2.6;
+    roundRect(ctx, b.x - 2 + off, b.y - 2 + off, b.w + 4, b.h + 4, 10);
+    ctx.stroke();
+  }
+  if (focused) {
+    ctx.strokeStyle = P.ink;
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([4, 3]);
+    roundRect(ctx, b.x - 6 + off, b.y - 6 + off, b.w + 12, b.h + 12, 13);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// "Theme: Spooky Night" above the chips: the focused chip's name, else the picked one.
+function chipCaption(ctx, menu, y) {
+  const f = menu.focused();
+  const id = f && f.kind === 'chip' ? f.themeId : themeState.picked;
+  ctx.textAlign = 'center';
+  inkText(ctx, 'Theme: ' + getTheme(id).name, W / 2, y, 14, P.ink, null, 'normal');
 }
 
 function drawButton(ctx, b, focused, pressed, enabled, alpha) {
@@ -635,6 +722,16 @@ function drawPause(ctx, menu) {
   ctx.textAlign = 'center';
   inkText(ctx, 'Paused', W / 2, b.y + 58, 34, P.rope, null);
   drawMenuButtons(ctx, menu);
+  controlsHint(ctx, b.y + 294);
+}
+
+// The keyboard reminder, on two lines (Revision 3 wording).
+function controlsHint(ctx, y) {
+  ctx.globalAlpha = 0.75;
+  ctx.textAlign = 'center';
+  inkText(ctx, 'Arrows / WASD steer  ·  Shift + arrow loops', W / 2, y, 13, P.ink, null, 'normal');
+  inkText(ctx, 'Space cinches  ·  Esc or P pauses  ·  M mutes', W / 2, y + 18, 13, P.ink, null, 'normal');
+  ctx.globalAlpha = 1;
 }
 
 // A curled Zoe pose: head at (x, y), body bending `bend` radians per segment.
@@ -666,11 +763,9 @@ function drawTitle(ctx, dt, menu) {
   titleRig.draw(ctx, p, art, 0.6);
   ctx.restore();
 
+  chipCaption(ctx, menu, b.y + CHIP_ROW.title - 36);
   drawMenuButtons(ctx, menu);
-  ctx.globalAlpha = 0.75;
-  ctx.textAlign = 'center';
-  inkText(ctx, 'Esc or P pauses  ·  M mutes', W / 2, b.y + 394, 13, P.ink, null, 'normal');
-  ctx.globalAlpha = 1;
+  controlsHint(ctx, b.y + 474);
 }
 
 // How to play: three little pictures (steer, swing, cinch) and a legend.
@@ -735,7 +830,7 @@ function drawHowto(ctx, menu, dt) {
   const colW = 112, gap = 6, top = b.y + 60, ph = 88;
   const x0 = W / 2 - colW * 1.5 - gap;
   const steps = [
-    ['1. Steer', 'drag, mouse,', 'or ← → keys'],
+    ['1. Steer', 'drag, mouse,', 'or arrow keys'],
     ['2. Swing', 'the leash round', 'socks & shoes'],
     ['3. Cinch!', 'CINCH button,', 'click or Space'],
   ];
@@ -803,25 +898,27 @@ function drawHowto(ctx, menu, dt) {
   ctx.setLineDash([]);
 
   // legend: what's what in Zoe's room
+  const wd = art.theme.words;
   const rows = [
-    ['ball', 'Ball', 'grab it for the zoomies!'],
-    ['blanket', 'Blankets', 'hide under one: dogs lose you'],
-    ['bath', 'Bath', 'dodge it, or your leash gets soggy'],
-    ['dog', 'Dogs', 'a bump makes Zoe dizzy, and a'],
+    ['ball', wd.ball, wd.ballTip],
+    ['blanket', wd.hide, wd.hideTip],
+    ['bath', wd.hazard, wd.hazardTip],
+    ['dog', wd.critters, wd.critterTip],
   ];
   const ix = b.x + 42, tx = b.x + 80;
   for (let r = 0; r < rows.length; r++) {
-    const ry = b.y + 256 + r * 48;
+    const ry = b.y + 254 + r * 46;
     const [icon, label, text] = rows[r];
     drawLegendIcon(ctx, icon, ix, ry + 4);
     ctx.textAlign = 'left';
     inkText(ctx, label, tx, ry, 15, P.rope, null);
     inkText(ctx, text, tx, ry + 18, 13, P.ink, null, 'normal');
-    if (icon === 'dog') inkText(ctx, 'touch on the leash snaps it', tx, ry + 34, 13, P.ink, null, 'normal');
+    if (icon === 'dog') inkText(ctx, wd.critterTip2, tx, ry + 34, 13, P.ink, null, 'normal');
   }
   ctx.textAlign = 'center';
   ctx.globalAlpha = 0.8;
-  inkText(ctx, 'Tip: hold ← or → to keep circling', W / 2, b.y + 460, 13, P.ink, null, 'normal');
+  inkText(ctx, 'Arrows / WASD steer  ·  Shift + arrow loops', W / 2, b.y + 454, 13, P.ink, null, 'normal');
+  inkText(ctx, 'Space cinches', W / 2, b.y + 471, 13, P.ink, null, 'normal');
   ctx.globalAlpha = 1;
   drawMenuButtons(ctx, menu);
 }
@@ -957,14 +1054,21 @@ function drawNapCard(ctx, game, t, menu) {
   ctx.globalAlpha = ct;
   const b = placeCard(ctx, art.cardOver, nap.cardY + dy, false);
   ctx.textAlign = 'center';
-  inkText(ctx, 'Zoe naps', W / 2, b.y + 50, 34, P.rope, null);
-  inkText(ctx, 'Score ' + game.score, W / 2, b.y + 90, 20, P.ink, null);
-  inkText(ctx, (game.newBest ? 'New best! ' : 'Best ') + game.best, W / 2, b.y + 118, game.newBest ? 19 : 17, game.newBest ? P.rope : P.ink, null, game.newBest ? 'bold' : 'normal');
-  inkText(ctx, NAP_CAPTION[game.napPose] || '', W / 2, b.y + 144, 14, P.ink, null, 'normal');
+  inkText(ctx, 'Zoe naps', W / 2, b.y + 46, 34, P.rope, null);
+  inkText(ctx, 'Score ' + game.score, W / 2, b.y + 80, 20, P.ink, null);
+  inkText(ctx, (game.newBest ? 'New best! ' : 'Best ') + game.best, W / 2, b.y + 106, game.newBest ? 19 : 17, game.newBest ? P.rope : P.ink, null, game.newBest ? 'bold' : 'normal');
+  inkText(ctx, NAP_CAPTION[game.napPose] || '', W / 2, b.y + 128, 14, P.ink, null, 'normal');
   ctx.save();
   ctx.translate(0, dy);
+  chipCaption(ctx, menu, b.y - dy + CHIP_ROW.over - 36);
   drawMenuButtons(ctx, menu, ct);
   ctx.restore();
+  // the 3-round rule: say when it kicked in, or how many rounds are left
+  const left = roundsLeft();
+  let note = '';
+  if (themeState.resetNote) note = 'Back to the bedroom! Pick a theme any time.';
+  else if (left > 0) note = left + (left === 1 ? ' more round' : ' more rounds') + ' here, then back to the bedroom';
+  if (note) inkText(ctx, note, W / 2, b.y + 314, 12.5, themeState.resetNote ? P.rope : P.ink, null, themeState.resetNote ? 'bold' : 'normal');
   ctx.globalAlpha = 1;
 }
 
@@ -999,4 +1103,64 @@ function drawZs(ctx, p, zt, sc) {
     }
     ctx.globalAlpha = 1;
   }
+}
+
+// ---------- sideways phone: Zoe asks the player to turn the phone upright ----------
+const rotPose = { x: 0, y: 0, heading: 0, segX: new Float32Array(CONFIG.SEG_COUNT), segY: new Float32Array(CONFIG.SEG_COUNT), n: CONFIG.SEG_COUNT, odo: 0, extra: 0, lunge: 0, stunned: false, zoom: false, nap: '' };
+
+function drawRotate(ctx, dt) {
+  dimScreen(ctx, 1);
+  const b = placeCard(ctx, art.cardRotate, CARDS.rotate.cy, false);
+  ctx.textAlign = 'center';
+  inkText(ctx, 'Turn your phone!', W / 2, b.y + 52, 32, P.rope, null);
+  inkText(ctx, 'Zoe needs the long way', W / 2, b.y + 84, 17, P.ink, null, 'normal');
+  inkText(ctx, 'to stretch out.', W / 2, b.y + 106, 17, P.ink, null, 'normal');
+
+  // a sketched phone turning upright, again and again
+  const cx = W / 2 - 70, cy = b.y + 236;
+  const ph = (clock * 0.5) % 1;
+  const turn = ph < 0.25 ? 0 : ph < 0.6 ? (ph - 0.25) / 0.35 : 1;
+  const ease = turn * turn * (3 - 2 * turn);
+  const ang = (motion.reduced ? 0 : -Math.PI / 2 * (1 - ease));
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(ang);
+  ctx.fillStyle = P.shadow;
+  roundRect(ctx, -30 + 2.5, -52 + 3.5, 60, 104, 10); ctx.fill();
+  ctx.fillStyle = P.paper;
+  roundRect(ctx, -30, -52, 60, 104, 10); ctx.fill();
+  ctx.strokeStyle = P.ink;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(169,177,194,0.6)';
+  roundRect(ctx, -23, -42, 46, 80, 4); ctx.fill();
+  ctx.fillStyle = P.ink;
+  ctx.beginPath(); ctx.arc(0, 44, 2.6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // a curved arrow
+  ctx.strokeStyle = P.rope;
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = 'round';
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.arc(cx, cy, 72, -2.7, -1.9); ctx.stroke();
+  ctx.setLineDash([]);
+  const ax = cx + Math.cos(-1.9) * 72, ay = cy + Math.sin(-1.9) * 72;
+  ctx.fillStyle = P.rope;
+  ctx.beginPath(); ctx.moveTo(ax + 8, ay + 1); ctx.lineTo(ax - 3, ay - 6); ctx.lineTo(ax - 2, ay + 7); ctx.closePath(); ctx.fill();
+
+  // Zoe standing tall beside it, looking up at the player
+  const p = rotPose;
+  curlPose(p, 0, 0, -Math.PI / 2 + Math.sin(clock * 1.6) * 0.06, 0.02);
+  p.odo = 0;
+  rotRig.update(p, dt);
+  ctx.save();
+  ctx.translate(W / 2 + 70, b.y + 170);
+  ctx.scale(2.2, 2.2);
+  rotRig.draw(ctx, p, art, 0.7);
+  ctx.restore();
+
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = 0.8;
+  inkText(ctx, 'The round is paused.', W / 2, b.y + 392, 15, P.ink, null, 'normal');
+  ctx.globalAlpha = 1;
 }

@@ -23,6 +23,10 @@ export const P = {
   // Zoe's bedroom
   bed: '#A9B1C2',          // mid-value cool bedspread base
   bedDeep: '#949DB2',
+  bedTone1: '#B4BACA',     // mottled washes on the bedspread
+  bedTone2: '#9EA4BA',
+  bedTone3: '#B9B4C4',
+  vignette: '70,72,100',   // r,g,b of the gentle edge darkening
   indigo: '#3F4A73',
   teal: '#4E6A82',
   pink: '#D4A3A0',
@@ -40,6 +44,7 @@ export const P = {
   sole: '#EFE4CF',
   cheese: '#F2C14E',
   cheeseDark: '#D49A2A',
+  cheeseTop: '#F8D982',
 
   // Other dogs (cool, dark: "not Zoe")
   dog: '#5D5A68',
@@ -47,6 +52,8 @@ export const P = {
   dogLight: '#8A8B98',
   dog2: '#6B7383',
   dog2Dark: '#474E5C',
+  dogInk: '#2E2B36',       // critter outline
+  dogEye: '#1E1B24',
 
   // Leash
   rope: '#C0654A',
@@ -67,7 +74,32 @@ export const P = {
   wetRopeLight: '#B4D0DC',
   dust: '#E6DCCB',         // zoomies dust puffs
   pawPad: '#D99A92',
+  bubble: 'rgba(214,236,244,0.45)',     // bubbles rising off the bath
+  bubbleRim: 'rgba(78,106,130,0.75)',
+  foamRim: 'rgba(78,106,130,0.45)',
+  ripple: 'rgba(255,255,255,0.7)',
 };
+
+// ---- Themes (T1) ----
+// The Bedroom colors above are the base. A theme's `palette` overrides some of
+// them while it is showing (see src/js/themes/README.md). Zoe's own colors are
+// locked, so she always looks like Zoe.
+export const BASE_P = { ...P };
+export const LOCKED = ['cream', 'paleCream', 'apricot', 'saddle', 'ink', 'nose', 'eye', 'blush', 'pawPad'];
+
+// Make P = base colors + these overrides (locked keys are ignored).
+export function applyPalette(over) {
+  Object.assign(P, BASE_P);
+  if (!over) return;
+  for (const key in over) if (!LOCKED.includes(key)) P[key] = over[key];
+}
+
+// Run fn() with P temporarily set to base + overrides, then put P back.
+export function withPalette(over, fn) {
+  const saved = { ...P };
+  applyPalette(over);
+  try { return fn(); } finally { Object.assign(P, saved); }
+}
 
 // Warm, handwritten-feeling system fonts. No web fonts are loaded.
 export const HAND = '"Chalkboard SE", "Chalkboard", "Segoe Print", "Bradley Hand", "Marker Felt", "Comic Neue", ui-rounded, "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif';

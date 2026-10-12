@@ -8,11 +8,12 @@ import { P } from './palette.js';
 import { CONFIG } from '../../config.js';
 import { motion } from '../platform.js';
 
-const CONFETTI = [P.sock, P.cheese, P.paper, P.pink, P.apricot, P.sun, P.teal];
-const BALL_COLORS = [P.ball, P.ballSeam, P.ballDark, P.sun];
-const WATER_COLORS = [P.water, P.waterDeep, P.foam, P.wetRopeLight];
-const FLUFF_COLORS = [P.sherpa, P.sherpaLight, P.paper];
-const ITEM_COLORS = { sock: [P.sock, P.paper, P.pink], shoe: [P.shoe, P.sole, P.apricot], cheese: [P.cheese, P.sun, P.paper] };
+// Read from the palette when an effect fires, so a theme's colors are used.
+const CONFETTI = () => [P.sock, P.cheese, P.paper, P.pink, P.apricot, P.sun, P.teal];
+const BALL_COLORS = () => [P.ball, P.ballSeam, P.ballDark, P.sun];
+const WATER_COLORS = () => [P.water, P.waterDeep, P.foam, P.wetRopeLight];
+const FLUFF_COLORS = () => [P.sherpa, P.sherpaLight, P.paper];
+const ITEM_COLORS = (type) => (type === 'shoe' ? [P.shoe, P.sole, P.apricot] : type === 'cheese' ? [P.cheese, P.sun, P.paper] : [P.sock, P.paper, P.pink]);
 
 export class Fx {
   constructor() {
@@ -91,10 +92,10 @@ export class Fx {
         const s = this.prevItems[i], it = list[i];
         if (!s || !s.active) continue;
         if (!it.active || it.x !== s.x || it.y !== s.y) {
-          this._spawn(s.x, s.y, 12, ITEM_COLORS[s.type] || CONFETTI, 110, 0.9);
+          this._spawn(s.x, s.y, 12, ITEM_COLORS(s.type), 110, 0.9);
         }
       }
-      this._spawn(game.flashX[game.flashN - 1] || 200, game.flashY[game.flashN - 1] || 300, 6, CONFETTI, 70, 0.6);
+      this._spawn(game.flashX[game.flashN - 1] || 200, game.flashY[game.flashN - 1] || 300, 6, CONFETTI(), 70, 0.6);
     }
     this.prevCaptures = game.captures;
     this._snapshot(game);
@@ -107,12 +108,12 @@ export class Fx {
     }
 
     const z = game.zoe;
-    if (game.zoomCount > this.prevZoom) this._spawn(game.ball.x, game.ball.y, 14, BALL_COLORS, 120, 0.8);
+    if (game.zoomCount > this.prevZoom) this._spawn(game.ball.x, game.ball.y, 14, BALL_COLORS(), 120, 0.8);
     if (game.splashCount > this.prevSplash) {
-      this._spawn(z.x, z.y, 14, WATER_COLORS, 130, 0.7);
+      this._spawn(z.x, z.y, 14, WATER_COLORS(), 130, 0.7);
       this.puff(z.x, z.y, 6, P.foam, 40, 0.6, 4);
     }
-    if (game.hideCount > this.prevHide) this._spawn(z.x, z.y, 8, FLUFF_COLORS, 70, 0.5);
+    if (game.hideCount > this.prevHide) this._spawn(z.x, z.y, 8, FLUFF_COLORS(), 70, 0.5);
     this.prevZoom = game.zoomCount;
     this.prevSplash = game.splashCount;
     this.prevHide = game.hideCount;

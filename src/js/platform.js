@@ -19,3 +19,19 @@ try {
 } catch {
   // matchMedia missing: keep full motion
 }
+
+// Sideways phone (T1): a touch screen that is wider than tall and short (a
+// phone in landscape) gets a "turn your phone" card and the round pauses.
+// Laptops with touch screens report a fine pointer and are left alone;
+// tablets in landscape are tall enough to skip the card.
+// `touchSeen` is set by main.js once a real touch arrives.
+export const screenShape = { sideways: false, touchSeen: false };
+let coarseMq = null;
+try { coarseMq = window.matchMedia('(pointer: coarse)'); } catch { /* old browser */ }
+
+export function checkSideways(maxH) {
+  const touch = (coarseMq && coarseMq.matches) || screenShape.touchSeen;
+  const w = window.innerWidth, h = window.innerHeight;
+  screenShape.sideways = !isExtension && touch && w > h && h < maxH;
+  return screenShape.sideways;
+}

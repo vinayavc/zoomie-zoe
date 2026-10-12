@@ -8,11 +8,15 @@ const W = CONFIG.ARENA_W, H = CONFIG.ARENA_H;
 
 // w/h = the paper card's inner size; cy = its centre line.
 export const CARDS = {
-  title: { w: 324, h: 420, cy: 322 },
+  title: { w: 324, h: 512, cy: 312 },
   howto: { w: 368, h: 540, cy: 324 },
-  pause: { w: 290, h: 300, cy: H / 2 },
-  over: { w: 290, h: 250 },            // its centre is picked at game over (opposite her nap spot)
+  pause: { w: 290, h: 340, cy: H / 2 },
+  over: { w: 290, h: 330 },            // its centre is picked at game over (opposite her nap spot)
+  rotate: { w: 360, h: 420, cy: H / 2 },
 };
+
+// Where the theme chip row sits on a card (offset of the chips' centre line from the card top).
+export const CHIP_ROW = { title: 422, over: 266 };
 
 // Top-left corner of a card's inner box.
 export function cardBox(name, cy = CARDS[name].cy) {
@@ -25,7 +29,7 @@ function btn(id, label, cx, cy, w, h, kind = 'wide') {
 }
 
 // The buttons of one screen, in keyboard (Tab / arrow) order.
-// `s` = { screen, muted, howtoFirst, overCardY }
+// `s` = { screen, muted, howtoFirst, overCardY, themes: [ids] }
 export function buttonsFor(s) {
   const BH = CONFIG.MENU_BTN_H;
   const sound = s.muted ? 'Sound: off' : 'Sound: on';
@@ -35,6 +39,7 @@ export function buttonsFor(s) {
       btn('play', 'Play', W / 2, b.y + 268, 200, BH + 6, 'big'),
       btn('howto', 'How to play', W / 2 - 80, b.y + 336, 148, BH - 2),
       btn('sound', sound, W / 2 + 80, b.y + 336, 148, BH - 2, 'sound'),
+      ...chipRow(s.themes, b.y + CHIP_ROW.title),
     ];
   }
   if (s.screen === 'howto') {
@@ -51,7 +56,10 @@ export function buttonsFor(s) {
   }
   if (s.screen === 'over') {
     const b = cardBox('over', s.overCardY);
-    return [btn('again', 'Play again', W / 2, b.y + 198, 190, BH - 2, 'big')];
+    return [
+      btn('again', 'Play again', W / 2, b.y + 176, 190, BH - 2, 'big'),
+      ...chipRow(s.themes, b.y + CHIP_ROW.over),
+    ];
   }
   if (s.screen === 'play') {
     const r = CONFIG.HUD_BTN_HIT * 2;
@@ -61,6 +69,17 @@ export function buttonsFor(s) {
     ];
   }
   return [];
+}
+
+// A row of theme chips (one per theme), centred on the arena.
+function chipRow(ids, cy) {
+  const w = CONFIG.THEME_CHIP_W, h = CONFIG.THEME_CHIP_H, gap = CONFIG.THEME_CHIP_GAP;
+  const x0 = W / 2 - (ids.length * w + (ids.length - 1) * gap) / 2 + w / 2;
+  return ids.map((id, i) => {
+    const b = btn('theme', id, x0 + i * (w + gap), cy, w, h, 'chip');
+    b.themeId = id;
+    return b;
+  });
 }
 
 export function hitButton(list, x, y) {

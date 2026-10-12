@@ -29,6 +29,7 @@ export class Game {
     this.newBest = false;
     this.overT = 0;
     this.downSinceOver = false;
+    this.onRoundEnd = null;  // optional callback when time runs out (main.js: theme rounds)
 
     this.popups = [];
     for (let i = 0; i < 24; i++) this.popups.push({ active: false, x: 0, y: 0, t: 0, text: '', big: false });
@@ -250,6 +251,7 @@ export class Game {
     let pick = NAP_POSES[Math.floor(Math.random() * NAP_POSES.length)];
     if (pick === this.napPose) pick = NAP_POSES[(NAP_POSES.indexOf(pick) + 1 + Math.floor(Math.random() * 2)) % NAP_POSES.length];
     this.napPose = pick;
+    if (this.onRoundEnd) this.onRoundEnd(); // theme round count (set in main.js); before the sigh, so a reset doesn't change it
     sfx.flop();
     sfx.sigh(0.35);
     if (this.score > this.best) {

@@ -242,6 +242,34 @@ function sound(fn) {
   };
 }
 
+// ---------------------------------------------------------------- theme twists
+// A theme's `sfx` object (see src/js/themes/README.md):
+//   pop:        { wave, pitch, vibrato: [rateHz, depthHz] }  data only
+//   catchLayer: (a, t, chain, n) => {}  extra sound on top of every catch
+//   over:       (a, t) => {}            replaces the round-over sigh
+// `a` is the little synth toolkit below; every node it makes is cleaned up.
+let twist = {};
+
+export function setSoundTwist(spec) {
+  twist = spec || {};
+}
+
+function tools(k) {
+  return {
+    ac: ctx,
+    out: master,
+    rnd,
+    semis,
+    voice: (type, t, dur, peak, curve, dest = master, attack) => voice(k, type, t, dur, peak, curve, dest, attack),
+    hiss: (t, dur, peak, type, f0, f1, q, dest = master, attack) => hiss(k, t, dur, peak, type, f0, f1, q, dest, attack),
+    lfo: (t, end, rate, depth, params) => lfo(k, t, end, rate, depth, params),
+    filter: (type, hz, q, dest = master) => filter(k, type, hz, q, dest),
+    env: (t, attack, peak, end, dest = master) => env(k, t, attack, peak, end, dest),
+  };
+}
+
+const twistSound = sound((k, t, fn, ...args) => fn(tools(k), t, ...args));
+
 // ---------------------------------------------------------------- sounds
 
 // Round start: a happy two-note "yip-yip". ~0.25 s
@@ -266,13 +294,16 @@ const cinch = sound((k, t) => {
 
 // One caught item: a soft pop. Pitch climbs with the chain and with each
 // item in the same loop (capped so it never gets shrill). ~0.09 s
+// A theme can colour the pop with `sfx.pop = { wave, pitch, vibrato: [rateHz, depthHz] }`.
 const pop = sound((k, t, chain = 1, i = 0, delay = 0) => {
+  const tw = twist.pop || {};
   const step = Math.min(chain, CONFIG.BLIP_MAX_CHAIN) - 1;
   const st = Math.min(step * CONFIG.BLIP_SEMITONES_PER_CHAIN + i * 2, 19);
-  const hz = CONFIG.BLIP_BASE_HZ * semis(st) * rnd(0.02);
+  const hz = CONFIG.BLIP_BASE_HZ * (tw.pitch || 1) * semis(st) * rnd(0.02);
   const s = t + delay;
-  voice(k, 'sine', s, 0.09, 0.45, [[hz * 1.5, 0], [hz, 0.03], [hz * 0.9, 0.09]], master, 0.004);
+  const a = voice(k, tw.wave || 'sine', s, 0.09, 0.45, [[hz * 1.5, 0], [hz, 0.03], [hz * 0.9, 0.09]], master, 0.004);
   voice(k, 'triangle', s, 0.05, 0.08, [[hz * 2, 0], [hz * 1.6, 0.05]], master, 0.004);
+  if (tw.vibrato) lfo(k, s, s + 0.09, tw.vibrato[0], tw.vibrato[1], [a.frequency]);
 });
 
 // A little "arf!" bark. ~0.17 s
@@ -292,6 +323,7 @@ function caught(chain = 1, n = 1) {
   const m = Math.min(n, MAX_POPS);
   for (let i = 0; i < m; i++) pop(chain, i, i * 0.055);
   if (n >= 4) arf(m * 0.055 + 0.04);
+  if (twist.catchLayer) twistSound(twist.catchLayer, chain, n);
 }
 
 // Dog bump: a bonk, then a grumbly low "boof". ~0.33 s
@@ -353,7 +385,13 @@ function countdown(timeLeft, dt) {
 }
 
 // Round over: a sleepy yawn-sigh, "aah-ooo". ~1 s
-const sigh = sound((k, t0, delay = 0) => {
+// A theme's `sfx.over(a, t)` plays instead, at the same moment.
+function sigh(delay = 0) {
+  if (twist.over) twistSound((a, t) => twist.over(a, t + delay));
+  else yawn(delay);
+}
+
+const yawn = sound((k, t0, delay = 0) => {
   const t = t0 + delay;
   const d = rnd(0.04);
   const vowel = k.add(ctx.createBiquadFilter());

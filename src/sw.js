@@ -5,7 +5,7 @@
 // Players' browsers then download a fresh copy and delete the old one.
 // If you add a new .js file, add it to FILES too (see docs/pwa-notes.md).
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = 'zoomie-zoe-' + CACHE_VERSION;
 
 // Every file the game needs, relative to this file. Fetched on the first visit.
@@ -43,6 +43,11 @@ const FILES = [
   'js/game/round.js',
   'js/game/trail.js',
   'js/game/zoe.js',
+  'js/themes/index.js',
+  'js/themes/bedroom.js',
+  'js/themes/halloween.js',
+  'js/themes/christmas.js',
+  'js/themes/spring.js',
 ];
 
 // Install: download everything into a fresh cache. 'reload' skips the HTTP cache,

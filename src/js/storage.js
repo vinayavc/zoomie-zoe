@@ -1,4 +1,4 @@
-// Saved settings (best score, mute, how-to seen): chrome.storage.local inside the extension,
+// Saved settings (best score, mute, how-to seen, theme): chrome.storage.local inside the extension,
 // localStorage on the web. Never throws.
 
 const KEY = 'doxieArcade.best';
@@ -87,5 +87,33 @@ export async function setFlag(key, value) {
     localStorage.setItem(key, value ? '1' : '0');
   } catch {
     // storage blocked: the flag just won't persist
+  }
+}
+
+// Short text values (e.g. the theme id, the theme round count). Same adapter.
+export async function getValue(key, fallback = '') {
+  try {
+    const store = chromeStore();
+    if (store) {
+      const res = await store.get(key);
+      return res[key] === undefined ? fallback : String(res[key]);
+    }
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function setValue(key, value) {
+  try {
+    const store = chromeStore();
+    if (store) {
+      await store.set({ [key]: String(value) });
+      return;
+    }
+    localStorage.setItem(key, String(value));
+  } catch {
+    // storage blocked: the value just won't persist
   }
 }

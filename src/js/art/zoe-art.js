@@ -7,6 +7,11 @@
 // plus optional { zoom (bool), nap ('' | 'belly' | 'donut' | 'loaf') }.
 // A napping Zoe has closed eyes; 'belly' shows her tummy and paws in the air,
 // 'loaf' and 'donut' tuck her legs away.
+//
+// Themes (T1): art.theme.costume can draw on her rig. `body(ctx, z, sprites)`
+// runs after her body is painted, in arena space; `head(ctx, z, sprites)` runs
+// last, in her head's own space (origin = skull centre, +x = toward the nose).
+// z = { pose, n, jx, jy, ja, jw, t }: joints head -> rump, their angles and half-widths.
 
 import { P, ZOE_ART as A } from './palette.js';
 import { catmullClosed, hashNoise } from './util.js';
@@ -327,17 +332,29 @@ export class ZoeRig {
     ctx.lineWidth = ink;
     ctx.stroke(body);
 
+    // 4b. theme costume on her body (sweater, cape ...)
+    const costume = art.theme ? art.theme.costume : null;
+    const cz = this._costumeView(pose, n);
+    if (costume && costume.body) {
+      ctx.save();
+      costume.body(ctx, cz, art.costume);
+      ctx.restore();
+    }
+    const collar = !(costume && costume.hideCollar);
+
     // 5. head, collar, face
     ctx.save();
     this._headXform(ctx, pose, hsx, hsy, wob);
     // collar: a navy band around the neck just behind the skull, gold tag on top
-    ctx.fillStyle = P.collar;
-    ctx.strokeStyle = P.ink;
-    ctx.lineWidth = 0.9;
-    ctx.beginPath();
-    ctx.ellipse(-8.6, 0, 2.6, 7.4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    if (collar) {
+      ctx.fillStyle = P.collar;
+      ctx.strokeStyle = P.ink;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.ellipse(-8.6, 0, 2.6, 7.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.strokeStyle = P.ink;
     ctx.lineWidth = ink * 2;
     ctx.stroke(head);              // union outline: stroke wide, then fill over the inside half
@@ -355,12 +372,14 @@ export class ZoeRig {
     ctx.globalAlpha = 1;
     ctx.restore();
     // gold tag on the collar
-    ctx.fillStyle = P.tag;
-    ctx.strokeStyle = P.ink;
-    ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.arc(-10.6, 0, 2.0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,248,220,0.8)';
-    ctx.beginPath(); ctx.arc(-11.1, -0.6, 0.6, 0, Math.PI * 2); ctx.fill();
+    if (collar) {
+      ctx.fillStyle = P.tag;
+      ctx.strokeStyle = P.ink;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.arc(-10.6, 0, 2.0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,248,220,0.8)';
+      ctx.beginPath(); ctx.arc(-11.1, -0.6, 0.6, 0, Math.PI * 2); ctx.fill();
+    }
     this._face(ctx, pose);
     // saddle wash where the ears lift off the head
     ctx.fillStyle = 'rgba(191,140,85,0.42)';
@@ -386,7 +405,22 @@ export class ZoeRig {
     this._earFringe(ctx, this.earL);
     this._earFringe(ctx, this.earR);
 
+    // 7. theme costume on her head (hat, crown ...), over the ears
+    if (costume && costume.head) {
+      ctx.save();
+      this._headXform(ctx, pose, hsx, hsy, wob);
+      costume.head(ctx, cz, art.costume);
+      ctx.restore();
+    }
+
     if (pose.stunned) this._stars(ctx, pose);
+  }
+
+  // What a theme costume gets to read (one reused object, no garbage per frame).
+  _costumeView(pose, n) {
+    const z = this.cz || (this.cz = { pose: null, n: 0, jx: this.jx, jy: this.jy, ja: this.ja, jw: this.jw, t: 0 });
+    z.pose = pose; z.n = n; z.t = this.t;
+    return z;
   }
 
   // Belly-up nap: four little legs in the air with pink paw pads, paddling in a dream.

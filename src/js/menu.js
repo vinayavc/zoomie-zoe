@@ -2,11 +2,14 @@
 // each button does. Works the same by tap, click and keyboard:
 //   arrows or Tab / Shift+Tab move the focus, Enter or Space chooses,
 //   Esc or P pause and resume, M mutes (handled in audio.js).
+// The title and game-over cards also carry the theme picker: one chip per theme.
 
 import { CONFIG } from '../config.js';
 import { buttonsFor, hitButton } from './layout.js';
 import { isMuted, toggleMute, unlockAudio } from './audio.js';
 import { getFlag, setFlag } from './storage.js';
+import { THEME_IDS, pickTheme, themeRoundStarted, themeState } from './themes/index.js';
+import { screenShape } from './platform.js';
 
 const HOWTO_KEY = 'doxieArcade.howtoSeen';
 
@@ -26,9 +29,10 @@ export class Menu {
     getFlag(HOWTO_KEY).then((v) => { if (v) this.howtoSeen = true; });
   }
 
-  // 'title' | 'howto' | 'play' | 'pause' | 'over' | 'napping' (before the card shows)
+  // 'rotate' (sideways phone) | 'title' | 'howto' | 'play' | 'pause' | 'over' | 'napping' (before the card shows)
   screen() {
     const g = this.game;
+    if (screenShape.sideways) return 'rotate';
     if (this.howto) return 'howto';
     if (g.scene === 'title') return 'title';
     if (g.scene === 'play') return g.paused ? 'pause' : 'play';
@@ -44,10 +48,10 @@ export class Menu {
   buttons() {
     const screen = this.screen();
     const muted = isMuted();
-    const key = screen + '|' + muted + '|' + this.howto + '|' + Math.round(this.overCardY);
+    const key = screen + '|' + muted + '|' + this.howto + '|' + Math.round(this.overCardY) + '|' + themeState.picked;
     if (key !== this._key) {
       this._key = key;
-      this._list = buttonsFor({ screen, muted, howtoFirst: this.howto === 'first', overCardY: this.overCardY });
+      this._list = buttonsFor({ screen, muted, howtoFirst: this.howto === 'first', overCardY: this.overCardY, themes: THEME_IDS });
       if (screen !== this._screen) { this.focus = 0; this._screen = screen; }
       if (this.focus >= this._list.length) this.focus = 0;
     }
@@ -56,7 +60,7 @@ export class Menu {
 
   focused() {
     const s = this.screen();
-    if (s === 'play' || s === 'napping') return null;
+    if (s === 'play' || s === 'napping' || s === 'rotate') return null;
     return this.buttons()[this.focus] || null;
   }
 
@@ -98,6 +102,9 @@ export class Menu {
       case 'again':
         this._start();
         break;
+      case 'theme':
+        pickTheme(b.themeId);   // the renderer bakes its art on the next (menu) frame
+        break;
       default:
         break;
     }
@@ -113,6 +120,7 @@ export class Menu {
 
   _start() {
     this.howto = '';
+    themeRoundStarted();
     this.game.start();
   }
 
@@ -134,6 +142,7 @@ export class Menu {
   // Returns true if the pointer landed on a button (so it doesn't steer or cinch).
   pointerDown(e, x, y) {
     const s = this.screen();
+    if (s === 'rotate') return true;
     if (s === 'over' || s === 'napping') this.game.downSinceOver = true;
     if (s === 'napping') return true;
     const b = hitButton(this.buttons(), x, y);
@@ -147,6 +156,7 @@ export class Menu {
   // Activate on release over the same button (touch audio unlocks on pointerup).
   pointerUp(e, x, y) {
     const s = this.screen();
+    if (s === 'rotate') { this.pressId = -1; this.pressBtn = null; return; }
     const was = this.pressId === e.pointerId ? this.pressBtn : null;
     this.pressId = -1;
     this.pressBtn = null;
@@ -161,7 +171,7 @@ export class Menu {
   // Mouse hover moves the focus, so the highlighted button is the one under the cursor.
   pointerMove(x, y) {
     const s = this.screen();
-    if (s === 'play' || s === 'napping') return;
+    if (s === 'play' || s === 'napping' || s === 'rotate') return;
     const list = this.buttons();
     const b = hitButton(list, x, y);
     if (b) this.focus = list.indexOf(b);
@@ -182,7 +192,7 @@ export class Menu {
       return false;
     }
     if (code === 'KeyM') return false; // audio.js toggles mute
-    if (s === 'napping') return true; // nothing to choose until the card shows
+    if (s === 'napping' || s === 'rotate') return true; // nothing to choose
     const list = this.buttons();
     const n = list.length;
     if (code === 'ArrowUp' || code === 'ArrowLeft' || code === 'KeyW' || code === 'KeyA' || (code === 'Tab' && e.shiftKey)) {

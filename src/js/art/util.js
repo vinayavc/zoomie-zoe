@@ -141,3 +141,86 @@ export function roundRectPts(x, y, w, h, r, per = 4) {
   }
   return pts;
 }
+
+// ---------------------------------------------------------------- bake-time helpers
+// (moved here from art/bake.js in T1 so every theme file can use them)
+
+// Grow a closed polygon outward by d along each vertex's averaged normal.
+export function offsetPts(pts, d) {
+  // signed area tells us which side is "out"
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
+  const sgn = a > 0 ? -1 : 1;
+  return pts.map((p, i) => {
+    const prev = pts[(i - 1 + pts.length) % pts.length], next = pts[(i + 1) % pts.length];
+    let nx = (next[1] - prev[1]) * sgn, ny = -(next[0] - prev[0]) * sgn;
+    const l = Math.hypot(nx, ny) || 1;
+    return [p[0] + (nx / l) * d, p[1] + (ny / l) * d];
+  });
+}
+
+export function pathPts(g, pts) {
+  g.beginPath();
+  g.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  g.closePath();
+}
+
+// Chaikin corner cutting for soft shapes.
+export function smoothPts(pts, n = 3) {
+  let cur = pts;
+  for (let k = 0; k < n; k++) {
+    const out = [];
+    for (let i = 0; i < cur.length; i++) {
+      const a = cur[i], b = cur[(i + 1) % cur.length];
+      out.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+      out.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+    }
+    cur = out;
+  }
+  return cur;
+}
+
+// Multiply the paper grain tile over a whole layer at device-pixel scale.
+export function grain(L, paper, alpha) {
+  const g = L.g;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'multiply';
+  g.globalAlpha = alpha;
+  g.fillStyle = g.createPattern(paper, 'repeat');
+  g.fillRect(0, 0, L.c.width, L.c.height);
+  g.restore();
+}
+
+// Same idea for cutouts with transparent edges: darken only where there is paint,
+// using a "specks" tile whose alpha is the grain's darkness.
+let specks = null;
+function speckTile(paper) {
+  if (specks && specks.src === paper) return specks.c;
+  const N = paper.width;
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d');
+  const src = paper.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, N, N);
+  const d = src.data;
+  for (let i = 0; i < N * N; i++) {
+    const lum = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3;
+    const a = Math.max(0, Math.min(255, (250 - lum) * 3.5));
+    d[i * 4] = 70; d[i * 4 + 1] = 50; d[i * 4 + 2] = 40; d[i * 4 + 3] = a;
+  }
+  g.putImageData(src, 0, 0);
+  specks = { src: paper, c };
+  return c;
+}
+
+export function grainAtop(L, paper, alpha) {
+  const g = L.g;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'source-atop';
+  g.globalAlpha = alpha;
+  g.fillStyle = g.createPattern(speckTile(paper), 'repeat');
+  g.fillRect(0, 0, L.c.width, L.c.height);
+  g.restore();
+}

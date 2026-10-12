@@ -2,17 +2,16 @@
 //   Touch:    floating thumb-pad (follows the thumb past its edge);
 //             action = second finger tap or the on-screen button
 //   Mouse:    Zoe steers toward the cursor; action = click
-//   Keyboard: a tap of left/right (A/D) heads Zoe toward screen-left/right;
-//             holding past KEY_HOLD_LOOP_DELAY keeps her curving (a circle);
-//             up/down (W/S) unused; action = Space
+//   Keyboard: arrows / WASD point Zoe toward that side of the screen (two keys
+//             = a diagonal); holding keeps her running that way;
+//             Shift + arrow curves her into a loop; action = Space
 // Whichever device was used last is in charge of steering.
 // Menus (menu.js) get first look at keys and at taps on their buttons.
 
 import { CONFIG } from '../config.js';
 import { wrapAngle } from './geom.js';
 
-// Keyboard steering: left/right head her toward screen-left/right; up/down are unused for now
-// (still listed so the page doesn't scroll).
+// Keyboard steering (Revision 3): each key points her toward that side of the screen.
 const KEY_DIRS = {
   ArrowUp: 'up', KeyW: 'up',
   ArrowDown: 'down', KeyS: 'down',
@@ -32,9 +31,10 @@ export class Input {
     this.buttonId = -1;          // touch currently holding the stretch button
     this.buttonDown = false;
     this.actionQueued = false;
-    // Hold-to-loop (keys): when each key went down, and which way she curves
-    // once the hold passes the delay (+1 = clockwise on screen, -1 = counterclockwise).
-    this.keyDownAt = { left: 0, right: 0 };
+    // Shift-loop (keys): Shift held, and which way she curves while looping
+    // (+1 = clockwise on screen, -1 = counterclockwise).
+    this.shift = false;
+    this.lastDir = 'right';      // most recent arrow pressed (breaks ties for diagonals)
     this.loopSign = 0;
     this.looping = false;
 
@@ -74,6 +74,7 @@ export class Input {
     this.buttonId = -1;
     this.buttonDown = false;
     this.actionQueued = false;
+    this.shift = false;
     this.loopSign = 0;
     this.looping = false;
   }
@@ -87,28 +88,27 @@ export class Input {
   // Desired heading for a head at (hx, hy) facing `heading`, or NaN for
   // "keep going straight". Called once per simulation step.
   steerAngle(hx, hy, heading) {
-    this.looping = false;
     if (this.mode === 'keys') {
-      // Tap: left = head toward screen-left (angle pi), right = screen-right (angle 0),
-      // turning at her normal rate, the shortest way.
-      // Hold past KEY_HOLD_LOOP_DELAY: keep curving the way she was already
-      // turning, so a held key draws a circle and never snaps into a reversal.
-      // No key, or both keys, = keep going straight.
-      const x = (this.keys.right ? 1 : 0) - (this.keys.left ? 1 : 0);
-      if (x === 0) return NaN;
-      const dir = x > 0 ? 'right' : 'left';
-      const target = x > 0 ? 0 : Math.PI;
-      const held = (performance.now() - this.keyDownAt[dir]) / 1000;
-      if (held < CONFIG.KEY_HOLD_LOOP_DELAY) {
-        // same sign rule as turnToward(), so the remembered direction is the real one
-        const d = wrapAngle(target - heading);
-        if (Math.abs(d) > 0.02) this.loopSign = d > 0 ? 1 : -1;
+      // Point: arrows aim her at that side of the screen (two keys = a diagonal),
+      // turning at her normal rate, the shortest way. No key = keep going straight.
+      // Shift + arrow: curve into a loop. The curve keeps the way she was turning
+      // toward that arrow's heading, so it never snaps into a reversal; if she
+      // already faces that way, left/up curve counterclockwise and right/down clockwise.
+      const k = this.keys;
+      const x = (k.right ? 1 : 0) - (k.left ? 1 : 0);
+      const y = (k.down ? 1 : 0) - (k.up ? 1 : 0);
+      if (x === 0 && y === 0) { this.looping = false; return NaN; }
+      const target = Math.atan2(y, x);
+      const d = wrapAngle(target - heading);
+      if (!this.shift) {
+        this.looping = false;
         return target;
       }
-      // Already facing that side when the key went down: <- curves
-      // counterclockwise on screen, -> clockwise.
-      if (this.loopSign === 0) this.loopSign = x > 0 ? 1 : -1;
-      this.looping = true;
+      if (!this.looping) {
+        if (Math.abs(d) > 0.02) this.loopSign = d > 0 ? 1 : -1;
+        else this.loopSign = this.lastDir === 'left' || this.lastDir === 'up' ? -1 : 1;
+        this.looping = true;
+      }
       return heading + this.loopSign * Math.PI / 2; // always more than one step away: full turn rate
     }
     if (this.mode === 'mouse') {
@@ -201,12 +201,9 @@ export class Input {
 
   _key(e, down) {
     const dir = KEY_DIRS[e.code];
-    // Shift+D toggles the debug overlay (plain D is "steer right").
-    if (down && e.code === 'KeyD' && e.shiftKey) {
-      this.onDebugKey();
-      e.preventDefault();
-      return;
-    }
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.shift = down;
+    else this.shift = e.shiftKey;
+    // Backquote toggles the debug overlay (Shift+D now curves Zoe into a loop).
     if (e.code === 'Backquote' && down) {
       this.onDebugKey();
       return;
@@ -216,14 +213,9 @@ export class Input {
       return;
     }
     if (dir) {
-      if (down && (dir === 'left' || dir === 'right')) {
-        // A fresh press (or the first repeat after a pause cleared the keys)
-        // restarts the hold timer: tap again to go back to heading-mode.
-        if (!e.repeat || !this.keys[dir]) {
-          this.keyDownAt[dir] = performance.now();
-          this.loopSign = 0;
-        }
+      if (down) {
         this.mode = 'keys';
+        if (!e.repeat) this.lastDir = dir;
       }
       this.keys[dir] = down;
       e.preventDefault();

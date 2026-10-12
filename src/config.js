@@ -144,7 +144,6 @@ export const CONFIG = {
   ACTION_BTN_Y: 546,
   ACTION_BTN_R: 34,
   PAD_KNOB_R: 20,           // drawn size of the thumb knob (bigger = easier to see under a thumb)
-  KEY_HOLD_LOOP_DELAY: 0.4, // hold <- or -> longer than this and Zoe keeps curving (draws a circle)
 
   // ---- Menus and HUD buttons (Phase 4B) ----
   HUD_BTN_R: 15,            // drawn radius of the HUD pause / sound buttons
@@ -154,4 +153,14 @@ export const CONFIG = {
   HUD_BTN_Y: 19,
   MENU_BTN_H: 50,           // menu buttons on the paper cards (tap targets)
   REDUCED_CONFETTI: 0.45,   // prefers-reduced-motion: this share of the confetti, moving slower
+
+  // ---- Themes and the sideways-phone card (T1) ----
+  THEME_DEFAULT: 'bedroom',
+  THEME_ROUNDS: 3,          // after this many finished rounds in another theme, back to the Bedroom
+  THEME_CHIP_W: 60,         // picker chip size (arena px; 48 high = about 45 CSS px on a 375 px phone)
+  THEME_CHIP_H: 48,
+  THEME_CHIP_GAP: 8,
+  CRITTER_HOP_HZ: 2.2,      // 'hop' critters: hops per second (looks only)
+  CRITTER_HOP_H: 6,         // 'hop' critters: hop height
+  ROTATE_MAX_H: 520,        // touch screen wider than tall and shorter than this (CSS px) = sideways phone
 };
