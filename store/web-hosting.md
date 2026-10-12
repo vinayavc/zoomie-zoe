@@ -1,44 +1,41 @@
 # Putting Zoomie Zoe online (GitHub Pages) and making the store zip
 
-Written for Vinny. No coding needed. Plan on about 15 minutes the first time.
+Written for Vinny. No coding needed. Plan on about 10 minutes the first time.
 
 ## Part 1: the web version on GitHub Pages (free)
 
-**What this does:** GitHub keeps a copy of the game's files and serves them as a web page at an address like `https://YOUR-NAME.github.io/zoomie-zoe/`. Anyone can open it on a phone or a laptop. The same site also hosts the privacy policy page the Chrome Web Store asks for.
+**What this does:** GitHub keeps the project's files and serves the game as a web page at **https://vinayavc.github.io/zoomie-zoe/**. Anyone can open it on a phone or a laptop. The same site also hosts the privacy policy page the Chrome Web Store asks for.
+
+**How it works:** you don't upload files by hand. The project has a small recipe file, `.github/workflows/pages.yml`, that tells GitHub to take everything in the `src` folder (plus `store/privacy.html`) and publish it. GitHub calls this recipe a *workflow*, and running it is a *GitHub Action*.
 
 ### One-time setup
-1. **Make a GitHub account** at https://github.com/signup. *(Only Vinny can do this: it's his account, his email and his password.)* The username you pick becomes part of the web address.
-2. **Make a new repository.** A repository is just a project folder on GitHub.
-   - Click the **+** at the top right, then **New repository**.
-   - **Repository name:** `zoomie-zoe`
-   - Choose **Public**. Free accounts can only publish Pages sites from public repositories.
-   - Tick **Add a README file**, so the next step has an upload button.
-   - Click **Create repository**.
-3. **Upload the game files.**
-   - In the repository, click **Add file → Upload files**.
-   - On your Mac, open Finder and go to the project's `src` folder. **Open** it (don't drag the `src` folder itself), press **Cmd + A** to select everything inside, and drag it all onto the GitHub upload area. The `js` and `icons` folders upload with everything in them.
-   - Also drag in **`store/privacy.html`**. It lands next to `index.html`.
-   - Scroll down, leave **Commit directly to the main branch** selected, and click **Commit changes**.
-   - When it finishes, the top level of the repository should show `index.html`, `manifest.json`, `config.js`, `style.css`, `privacy.html`, `README.md`, and the folders `js/` and `icons/`. If you see a `src/` folder instead, you dragged the folder rather than its contents. Delete it and try again.
-4. **Turn on Pages.**
+1. **The repository.** The project lives in the repository `vinayavc/zoomie-zoe` on GitHub. It must be **Public**, because free accounts can only publish Pages sites from public repositories. *(Making the account and repository is Vinny's job. Claude pushes the code to it once it exists.)*
+2. **Tell GitHub to publish with Actions.**
    - In the repository, click **Settings**, then **Pages** in the left menu.
-   - Under **Build and deployment → Source**, choose **Deploy from a branch**.
-   - Under **Branch**, choose **main** and folder **/ (root)**, then click **Save**.
-5. **Wait 1 to 10 minutes**, then refresh the Pages settings screen. It shows **"Your site is live at https://YOUR-NAME.github.io/zoomie-zoe/"**.
-6. **Test it.**
-   - Open that address on your laptop and on your phone, and play a round.
-   - Open `https://YOUR-NAME.github.io/zoomie-zoe/privacy.html` and check that the privacy page shows. That full address is the **privacy policy URL** for the store.
+   - Under **Build and deployment → Source**, choose **GitHub Actions**.
+   - GitHub then suggests some ready-made workflow templates. **Ignore them**: the project already has its own (`pages.yml`). Don't click **Configure** on any of them.
 
-### Updating the game later
-Do step 3 again with the new files. Files with the same name replace the old ones. The site updates within a few minutes. If the old version still shows, force-refresh with **Cmd + Shift + R**.
+### Publishing (for now: by hand, one click)
+While the game is still being checked, it only goes live when you ask.
+1. In the repository, click the **Actions** tab.
+2. In the left list, click **Publish to GitHub Pages**.
+3. Click **Run workflow** on the right, keep branch **main**, and click the green **Run workflow** button.
+4. Wait 1 to 2 minutes. The run gets a **green tick** when it's done. (A red cross means it failed. Click it to see why, or ask Claude.)
+5. **Test it.**
+   - Open https://vinayavc.github.io/zoomie-zoe/ on your laptop and your phone, and play a round.
+   - Open https://vinayavc.github.io/zoomie-zoe/privacy.html and check that the privacy page shows. That full address is the **privacy policy URL** for the store.
+
+### Later: publish automatically on every update
+Once Vinny approves the launch, Claude makes a one-line change to the workflow (it removes the `#` in front of the `push:` lines). After that, **every update pushed to the `main` branch publishes itself** within a couple of minutes. No clicks needed. You can still use **Run workflow** to republish any time.
 
 ### Good to know
-- The game must be opened from the web address, not by double-clicking `index.html`. Browsers block this kind of game when it's opened as a plain file.
-- `manifest.json` and the `icons/` folder get published too. That's harmless, because only Chrome reads them.
+- **Seeing an old version?** The game saves itself for offline play, so the first visit after an update can still show the old version. Reload once more, or force-refresh with **Cmd + Shift + R** on a laptop.
+- Open the game from its web address, not by double-clicking `index.html`. Browsers block this kind of game when it's opened as a plain file.
+- `manifest.json` (the Chrome extension's settings file) gets published too. That's harmless: web browsers ignore it, and the web app uses `manifest.webmanifest` instead.
 
 Official GitHub help:
-- Publishing source, root or `/docs` folder: https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site
-- Uploading files in the browser (up to 100 files at once, 25 MiB each): https://docs.github.com/en/repositories/working-with-files/managing-files/adding-a-file-to-a-repository
+- Publishing with GitHub Actions: https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site#publishing-with-a-custom-github-actions-workflow
+- Running a workflow by hand: https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-workflow-runs/manually-running-a-workflow
 
 ---
 

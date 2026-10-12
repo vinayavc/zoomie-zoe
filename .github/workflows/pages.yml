@@ -1,0 +1,63 @@
+# Publishes Zoomie Zoe to GitHub Pages.
+# The contents of src/ become the site root:
+#   https://vinayavc.github.io/zoomie-zoe/  ->  src/index.html
+# store/privacy.html is copied in too, so the Chrome Web Store privacy URL is
+#   https://vinayavc.github.io/zoomie-zoe/privacy.html
+#
+# One-time setup: repo Settings -> Pages -> Source: "GitHub Actions".
+# See store/web-hosting.md and docs/ship-notes.md.
+#
+# Action versions checked Oct 12, 2026 against the GitHub docs and each
+# action's releases page (latest major of each).
+
+name: Publish to GitHub Pages
+
+on:
+  # Run by hand: Actions tab -> "Publish to GitHub Pages" -> Run workflow.
+  workflow_dispatch:
+  # enable at go-live: uncomment the next two lines so every push to main publishes.
+  # push:
+  #   branches: [main]
+
+# Least privilege: read the repo, write Pages, and get an OIDC token for the deploy.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deploy at a time. A newer queued run waits instead of cancelling
+# a deploy that is already in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Set up Pages
+        uses: actions/configure-pages@v6
+
+      # Only happens on the build machine; the repo itself is not changed.
+      - name: Add the privacy page next to index.html
+        run: cp store/privacy.html src/privacy.html
+
+      # Dotfiles (e.g. .DS_Store) are left out by default, which is what we want.
+      - name: Upload src/ as the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: src
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
