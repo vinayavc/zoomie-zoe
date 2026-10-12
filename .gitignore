@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Personal reference photos of Zoe (kept local, not published)
+docs/ref/
+
+# Local milestone snapshots (git history replaces these)
+archive/
+
+# Dev screenshots taken by builder agents while testing (large, regenerated often)
+docs/screens/
+
+# Orchestrator heartbeat markers and local Claude settings
+.claude/.hb-*
+.claude/settings.local.json
+
+# Build output
+*.zip
+__pycache__/
+
+# Obsidian vault settings (personal)
+.obsidian/

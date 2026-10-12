@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zoomie Zoe icon maker</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #ececec; color: #222; margin: 16px; }
+  h2 { font-size: 15px; margin: 18px 0 6px; }
+  .row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+  .tile { padding: 10px; border-radius: 6px; display: flex; gap: 10px; align-items: center; }
+  .light { background: #f1f3f4; } .dark { background: #202124; } .grey { background: #dee1e6; }
+  canvas.zoom { image-rendering: pixelated; }
+  a { font-size: 12px; margin-right: 10px; }
+  #status { font-size: 12px; color: #555; }
+</style>
+</head>
+<body>
+<h1 style="font-size:18px">Zoomie Zoe: icon and promo-tile maker</h1>
+<p style="font-size:13px;max-width:60em">
+  Draws Zoe's face procedurally (no image files) with the game's own palette and helpers, then offers PNG downloads.
+  ES modules need a web server: from the project root run <code>python3 -m http.server 8743 --bind 127.0.0.1</code>
+  and open <code>http://127.0.0.1:8743/store/tools/icon-maker.html</code>.
+  Copy the 16/32/48/128 PNGs and the PWA icons (180, 192, 512, maskable-512) to <code>src/icons/</code> and the promo tile to <code>store/promo-440x280.png</code>.
+</p>
+<div id="status">drawing…</div>
+<div id="out"></div>
+
+<script type="module">
+import { P, HAND } from '../../src/js/art/palette.js';
+import { makeRng, deform, polygon, fillPts, tornOutline, roundRectPts, wash } from '../../src/js/art/util.js';
+import { bakeAll } from '../../src/js/art/bake.js';
+
+// ---------------------------------------------------------------------------
+// Detail levels: 0 = 16 px (bare silhouette), 1 = 32 px, 2 = 48 px, 3 = 128 px and promo.
+// Art is drawn in a 100 x 100 unit box.
+// ---------------------------------------------------------------------------
+
+function speckLayer(w, h, seed, density = 0.5) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  const id = g.createImageData(w, h);
+  const rng = makeRng(seed);
+  for (let i = 0; i < w * h; i++) {
+    const r = rng();
+    const a = r < density ? (rng() * 70) : 0;
+    id.data[i * 4] = 70; id.data[i * 4 + 1] = 50; id.data[i * 4 + 2] = 40; id.data[i * 4 + 3] = a;
+  }
+  g.putImageData(id, 0, 0);
+  return c;
+}
+
+// paper grain only where paint already is
+function grainAtop(g, alpha, seed) {
+  const c = g.canvas;
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'source-atop';
+  g.globalAlpha = alpha;
+  g.drawImage(speckLayer(c.width, c.height, seed), 0, 0);
+  g.restore();
+}
+
+// watercolor blots inside a clip path
+function blots(g, path, box, tones, rng, n, alpha, size) {
+  g.save();
+  g.clip(path);
+  for (let b = 0; b < n; b++) {
+    const cx = box[0] + rng() * box[2], cy = box[1] + rng() * box[3];
+    const r = size * (0.5 + rng());
+    const shape = deform(polygon(cx, cy, r, 7, rng, r, r * (0.6 + rng() * 0.5)), 2, 0.3, rng);
+    g.fillStyle = tones[b % tones.length];
+    g.globalAlpha = alpha;
+    for (let l = 0; l < 5; l++) fillPts(g, deform(shape, 2, 0.4, rng));
+  }
+  g.globalAlpha = 1;
+  g.restore();
+}
+
+function ellipsePath(p, cx, cy, rx, ry) {
+  p.moveTo(cx + rx, cy);
+  p.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+}
+
+function smoothClosed(pts) {
+  const p = new Path2D();
+  const n = pts.length;
+  p.moveTo((pts[0][0] + pts[n - 1][0]) / 2, (pts[0][1] + pts[n - 1][1]) / 2);
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    p.quadraticCurveTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+  }
+  p.closePath();
+  return p;
+}
+
+function mirror(pts) { return pts.map(([x, y]) => [100 - x, y]).reverse(); }
+
+// Zoe's left ear (viewer's left). Long, pale, feathered fringe at the bottom.
+const EAR_FULL = [[36, 30], [28, 28.5], [21.5, 34], [17, 45], [14.5, 57], [13.5, 69], [14.5, 78], [18, 84], [21.5, 80], [24.5, 86], [28, 81], [31.5, 85], [34, 78], [36.5, 66], [38, 52], [38.5, 38]];
+const EAR_SIMPLE = [[36, 29], [26, 28], [18.5, 37], [14, 54], [12.5, 70], [15, 82], [24, 85], [33, 81], [37, 64], [38.5, 42]];
+
+// Draws the portrait into g, whose transform maps the 100-unit box to the art area.
+// `px` = device pixels per unit (for ink widths), `lvl` = detail level.
+function drawFace(g, px, lvl, seed = 11) {
+  const rng = makeRng(seed);
+  const ink = (lvl === 0 ? 1.0 : lvl === 1 ? 1.0 : lvl === 2 ? 1.35 : 2.0) / px; // ink line in units
+  // At 16 px the outlines go soft (saddle brown) so the eyes are the darkest marks.
+  const line = lvl === 0 ? P.saddle : P.ink;
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+
+  // --- the backing disk: Zoe's blue-grey sherpa pillow, as a paper cutout ---
+  const R = lvl === 0 ? 49.5 : 47;
+  let diskPts = polygon(50, 50, R, 72, null);
+  if (lvl >= 2) diskPts = tornOutline(diskPts, 0.9, rng);
+  const disk = new Path2D();
+  disk.moveTo(diskPts[0][0], diskPts[0][1]);
+  for (const q of diskPts) disk.lineTo(q[0], q[1]);
+  disk.closePath();
+  if (lvl >= 3) { // the disk's own paper shadow (falls in the transparent padding)
+    g.save(); g.translate(1.6, 2.4); g.fillStyle = P.shadowSoft; g.fill(disk); g.restore();
+  }
+  g.fillStyle = P.sherpa;
+  g.fill(disk);
+  if (lvl >= 2) {
+    blots(g, disk, [0, 0, 100, 100], [P.sherpaLight, P.sherpaDark, P.teal, P.sherpaLight], rng, 14, lvl >= 3 ? 0.07 : 0.05, 16);
+    // sherpa curls, only big enough to see at 128
+    if (lvl >= 3) {
+      g.save(); g.clip(disk);
+      g.strokeStyle = P.sherpaLight; g.globalAlpha = 0.35; g.lineWidth = 1.1;
+      for (let i = 0; i < 60; i++) {
+        const x = rng() * 100, y = rng() * 100, r = 1.2 + rng() * 1.2;
+        g.beginPath(); g.arc(x, y, r, rng() * 6, rng() * 6 + 3.5); g.stroke();
+      }
+      g.restore();
+    }
+  }
+  // soft darker rim so the disk holds its edge on light toolbars
+  g.save(); g.clip(disk);
+  g.strokeStyle = P.sherpaDark; g.globalAlpha = lvl === 0 ? 0.9 : 0.6;
+  g.lineWidth = (lvl === 0 ? 1.2 : 1.4) / px * 2;
+  g.stroke(disk);
+  g.restore();
+  g.globalAlpha = 1;
+
+  // --- shapes ---
+  const earPts = lvl >= 2 ? EAR_FULL : EAR_SIMPLE;
+  const earL = smoothClosed(earPts), earR = smoothClosed(mirror(earPts));
+  const head = new Path2D();
+  const sk = lvl === 0 ? [50, 40, 21.5, 19.5] : [50, 40, 20.5, 18.5];
+  ellipsePath(head, ...sk);
+  ellipsePath(head, 50, 53, 16, 12);           // cheeks: smooth the skull-to-muzzle join
+  ellipsePath(head, 50, 62, 12.2, 15);         // long slim muzzle
+  const chest = new Path2D();
+  ellipsePath(chest, 50, 92, 22, 16);
+
+  // --- hard offset paper shadow, clipped to the disk ---
+  if (lvl >= 1) {
+    g.save(); g.clip(disk);
+    g.translate(2.2, 2.8);
+    g.fillStyle = P.shadow;
+    g.fill(chest); g.fill(earL); g.fill(earR); g.fill(head);
+    g.restore();
+  }
+
+  // --- chest + collar (clipped: the portrait ends at the disk edge) ---
+  g.save(); g.clip(disk);
+  g.fillStyle = P.paleCream; g.fill(chest);
+  if (lvl >= 2) blots(g, chest, [28, 76, 44, 24], [P.cream, '#E3CDA9'], rng, 5, 0.12, 8);
+  g.strokeStyle = line; g.lineWidth = ink; g.stroke(chest);
+  if (lvl >= 1) {
+    const collar = new Path2D();
+    collar.moveTo(30, 81); collar.quadraticCurveTo(50, 91, 70, 81);
+    collar.lineTo(70, 87.5); collar.quadraticCurveTo(50, 97.5, 30, 87.5);
+    collar.closePath();
+    g.fillStyle = P.collar; g.fill(collar);
+    g.strokeStyle = P.ink; g.lineWidth = ink * 0.8; g.stroke(collar);
+  }
+  g.restore();
+
+  // --- ears (behind the head): pale cream, edge-darkened, ink outline ---
+  for (const ear of [earL, earR]) {
+    g.fillStyle = P.paleCream;
+    g.fill(ear);
+    if (lvl >= 2) blots(g, ear, [12, 22, 76, 66], [P.cream, '#E3CDA9', P.cream], rng, 8, 0.1, 7);
+    if (lvl >= 1) {
+      g.save(); g.clip(ear);
+      g.strokeStyle = P.saddle; g.globalAlpha = 0.28; g.lineWidth = lvl >= 3 ? 4 : 5;
+      g.stroke(ear);
+      g.restore();
+    }
+    g.strokeStyle = line; g.lineWidth = ink; g.stroke(ear);
+  }
+  // wavy fringe strokes on the ears (long hair)
+  if (lvl >= 3) {
+    g.strokeStyle = 'rgba(191,140,85,0.45)';
+    g.lineWidth = 0.7;
+    for (const s of [1, -1]) {
+      for (let i = 0; i < 4; i++) {
+        const x0 = 50 - s * (31 - i * 1.6), y0 = 44 + i * 7;
+        g.beginPath();
+        g.moveTo(x0, y0);
+        g.bezierCurveTo(x0 - s * 3, y0 + 8, x0 + s * 1.5, y0 + 14, x0 - s * 2, y0 + 22);
+        g.stroke();
+      }
+    }
+  }
+
+  // --- head: ink stroked wide, then filled (clean union outline) ---
+  g.strokeStyle = line; g.lineWidth = ink * 2; g.stroke(head);
+  g.fillStyle = P.cream; g.fill(head);
+  g.save(); g.clip(head);
+  if (lvl >= 2) blots(g, head, [28, 20, 44, 58], [P.paleCream, P.cream, '#E3CDA9'], rng, 8, 0.12, 8);
+  g.fillStyle = P.apricot;
+  g.globalAlpha = lvl === 0 ? 0.9 : 0.75;
+  g.beginPath(); g.ellipse(50, 26, 23, 12.5, 0, 0, Math.PI * 2); g.fill();          // saddle cap
+  g.globalAlpha = lvl === 0 ? 0.5 : 0.3;
+  g.beginPath(); g.ellipse(50, 37, 9, 11, 0, 0, Math.PI * 2); g.fill();            // soft wash down the forehead
+  g.globalAlpha = lvl === 0 ? 0 : 0.18;
+  g.beginPath(); g.ellipse(50, 56, 5, 10, 0, 0, Math.PI * 2); g.fill();            // muzzle ridge
+  if (lvl >= 1) {
+    g.fillStyle = P.saddle; g.globalAlpha = 0.28;
+    g.beginPath(); g.ellipse(50, 22, 18, 7, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = P.apricot; g.globalAlpha = 0.3;                                    // muzzle sides
+    g.beginPath(); g.ellipse(39.5, 60, 3.6, 10, -0.15, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(60.5, 60, 3.6, 10, 0.15, 0, Math.PI * 2); g.fill();
+    g.fillStyle = P.saddle; g.globalAlpha = 0.45;                                    // ear roots
+    g.beginPath(); g.ellipse(32.5, 31, 6, 5, 0.4, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(67.5, 31, 6, 5, -0.4, 0, Math.PI * 2); g.fill();
+  }
+  if (lvl >= 3) { // fur strokes on the forehead
+    g.strokeStyle = P.saddle; g.globalAlpha = 0.35; g.lineWidth = 0.6;
+    for (let i = 0; i < 9; i++) {
+      const x = 42 + i * 2, y = 24 + Math.abs(i - 4) * 0.8;
+      g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + (i - 4) * 0.4, y + 4, x + (i - 4) * 0.8, y + 7); g.stroke();
+    }
+  }
+  g.globalAlpha = 1;
+  g.restore();
+
+  // --- brows: soft and a little worried (inner ends raised) ---
+  if (lvl >= 2) {
+    g.strokeStyle = 'rgba(107,74,47,0.55)';
+    g.lineWidth = lvl >= 3 ? 1.1 : 1.6;
+    for (const s of [-1, 1]) {
+      g.beginPath();
+      g.moveTo(50 + s * 15, 39.5);
+      g.quadraticCurveTo(50 + s * 10.5, 36.5, 50 + s * 5.5, 35.5);
+      g.stroke();
+    }
+  }
+
+  // --- 16 px: pixel-snapped eyes and nose (2x2 px eyes, 2 px nose) so they stay crisp ---
+  if (lvl === 0) {
+    const u = 100 / 16;
+    g.fillStyle = P.eye;
+    g.fillRect(5 * u, 6 * u, 2 * u, 2 * u);
+    g.fillRect(9 * u, 6 * u, 2 * u, 2 * u);
+    g.fillStyle = P.nose;
+    g.fillRect(7 * u, 10 * u, 2 * u, 1.6 * u);
+    return;
+  }
+
+  // --- big soft brown eyes ---
+  const er = [7.2, 6.2, 5.6, 5.0][lvl];
+  const ex = lvl === 1 ? 9.375 : 9.5;           // 32 px: centres on pixel corners (x 13 and 19 px)
+  const ey = lvl === 1 ? 46.875 : 46;
+  for (const s of [-1, 1]) {
+    const x = 50 + s * ex, y = ey;
+    g.fillStyle = P.ink; g.beginPath(); g.arc(x, y, er, 0, Math.PI * 2); g.fill();
+    g.fillStyle = P.eye; g.beginPath(); g.arc(x, y, er - Math.max(0.6, ink * 0.55), 0, Math.PI * 2); g.fill();
+    if (lvl >= 1) {
+      g.fillStyle = '#ffffff';
+      g.beginPath(); g.arc(x + er * 0.32, y - er * 0.36, er * (lvl === 1 ? 0.4 : 0.34), 0, Math.PI * 2); g.fill();
+    }
+    if (lvl >= 3) {
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.beginPath(); g.arc(x - er * 0.35, y + er * 0.4, er * 0.14, 0, Math.PI * 2); g.fill();
+    }
+  }
+
+  // --- rosy liver nose ---
+  const nw = lvl === 0 ? 8 : 7, nt = 67, nb = lvl === 0 ? 76 : 75;
+  const nose = new Path2D();
+  nose.moveTo(50 - nw, nt + 2.5);
+  nose.bezierCurveTo(50 - nw, nt - 1.2, 50 + nw, nt - 1.2, 50 + nw, nt + 2.5);
+  nose.bezierCurveTo(50 + nw, nt + 5.5, 50 + 2.5, nb, 50, nb);
+  nose.bezierCurveTo(50 - 2.5, nb, 50 - nw, nt + 5.5, 50 - nw, nt + 2.5);
+  nose.closePath();
+  g.fillStyle = P.nose; g.fill(nose);
+  if (lvl >= 1) { g.strokeStyle = P.ink; g.lineWidth = ink * 0.8; g.stroke(nose); }
+  if (lvl >= 1) {
+    g.fillStyle = 'rgba(246,234,213,0.8)';
+    g.beginPath(); g.ellipse(46.5, nt + 1.6, 2, 1.1, -0.2, 0, Math.PI * 2); g.fill();
+  }
+  if (lvl >= 3) { // nostrils
+    g.fillStyle = 'rgba(46,33,26,0.55)';
+    for (const s of [-1, 1]) { g.beginPath(); g.ellipse(50 + s * 3, nt + 4.2, 1.3, 0.8, s * 0.4, 0, Math.PI * 2); g.fill(); }
+  }
+
+  // --- gold tag on the collar ---
+  if (lvl >= 2) {
+    g.save(); g.clip(disk);
+    g.fillStyle = P.tag; g.strokeStyle = P.ink; g.lineWidth = ink * 0.8;
+    g.beginPath(); g.arc(50, 93.5, lvl >= 3 ? 3.4 : 4, 0, Math.PI * 2); g.fill(); g.stroke();
+    if (lvl >= 3) { g.fillStyle = 'rgba(255,248,220,0.85)'; g.beginPath(); g.arc(49, 92.4, 1, 0, Math.PI * 2); g.fill(); }
+    g.restore();
+  }
+}
+
+// An icon canvas of `size` px; `art` = px of the 100-unit box, centred.
+// `bg` (optional) fills the whole square first: opaque icons for iOS and maskable.
+// Ink widths are computed for 128 px and scale up with the art beyond that.
+function makeIcon(size, art, lvl, bg) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  if (bg) {
+    g.fillStyle = bg;
+    g.fillRect(0, 0, size, size);
+  }
+  const s = art / 100, off = (size - art) / 2;
+  g.setTransform(s, 0, 0, s, off, off);
+  drawFace(g, Math.min(s, 0.96), lvl);
+  if (lvl >= 3) grainAtop(g, 0.22, 5);
+  return c;
+}
+
+// ---------------------------------------------------------------------------
+// Promo tile, 440 x 280
+// ---------------------------------------------------------------------------
+function inkText(g, text, x, y, size, color, outline, weight = 'bold') {
+  g.font = `${weight} ${size}px ${HAND}`;
+  g.lineJoin = 'round';
+  if (outline) { g.lineWidth = Math.max(2.5, size * 0.2); g.strokeStyle = outline; g.strokeText(text, x, y); }
+  g.fillStyle = color;
+  g.fillText(text, x, y);
+}
+
+function drawPromo(art) {
+  const W = 440, H = 280;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const rng = makeRng(42);
+
+  // 1. Zoe's bedroom, straight from the game's baked background (arena units -> px)
+  const bg = art.bg;
+  const k = art.k;
+  const sx = 0, sy = 250, sw = 400, sh = 400 * H / W;
+  g.drawImage(bg.c, sx * k, sy * k, sw * k, sh * k, 0, 0, W, H);
+  g.fillStyle = 'rgba(52,50,78,0.16)';
+  g.fillRect(0, 0, W, H);
+
+  // 2. torn paper card for the title (right)
+  const cx = 236, cy = 44, cw = 190, ch = 192;
+  g.save();
+  g.translate(cx + cw / 2, cy + ch / 2);
+  g.rotate(0.03);
+  g.translate(-cw / 2, -ch / 2);
+  const edge = tornOutline(deform(roundRectPts(0, 0, cw, ch, 6, 3), 1, 0.02, rng), 3, rng);
+  g.fillStyle = P.shadow;
+  g.save(); g.translate(4, 6); fillPts(g, edge); g.restore();
+  g.fillStyle = P.paper;
+  fillPts(g, edge);
+  g.save();
+  g.beginPath(); g.moveTo(edge[0][0], edge[0][1]); for (const q of edge) g.lineTo(q[0], q[1]); g.closePath();
+  g.clip();
+  for (let i = 0; i < 10; i++) {
+    const side = i % 4;
+    const x = side === 0 ? rng() * cw : side === 1 ? cw : side === 2 ? rng() * cw : 0;
+    const y = side === 0 ? 0 : side === 1 ? rng() * ch : side === 2 ? ch : rng() * ch;
+    wash(g, polygon(x, y, 34 + rng() * 26, 8, rng), i % 3 ? P.sun : P.pink, rng, { layers: 8, alpha: 0.06 });
+  }
+  g.restore();
+  g.textAlign = 'center';
+  g.textBaseline = 'alphabetic';
+  // Title: shrink "Zoomie" until it fits the card, then the tagline below.
+  let big = 50;
+  g.font = `bold ${big}px ${HAND}`;
+  while (g.measureText('Zoomie').width > cw - 22 && big > 30) { big -= 1; g.font = `bold ${big}px ${HAND}`; }
+  inkText(g, 'Zoomie', cw / 2, 74, big, P.rope, null);
+  inkText(g, 'Zoe', cw / 2, 124, big, P.rope, null);
+  inkText(g, 'a leash-lasso', cw / 2, 156, 17, P.ink, null, 'normal');
+  inkText(g, 'sock heist', cw / 2, 177, 17, P.ink, null, 'normal');
+  g.restore();
+
+  // 3. Zoe's portrait as a big paper sticker (left)
+  const S = 2.14;                         // px per unit -> disk about 200 px across
+  g.save();
+  g.translate(122, 142);
+  g.rotate(-0.07);
+  g.translate(-50 * S, -50 * S);
+  g.scale(S, S);
+  const rim = tornOutline(polygon(50, 50, 51, 90, null), 1.0, rng);
+  g.fillStyle = P.shadow;
+  g.save(); g.translate(2.4, 3.2); fillPts(g, rim); g.restore();
+  g.fillStyle = P.paper;
+  fillPts(g, rim);
+  drawFace(g, S, 3, 11);
+  g.restore();
+
+  // 4. loot stickers from the game
+  const st = (L, x, y, rot, sc) => {
+    g.save(); g.translate(x, y); g.rotate(rot); g.scale(sc, sc);
+    g.drawImage(L.c, -L.w / 2, -L.h / 2, L.w, L.h);
+    g.restore();
+  };
+  st(art.stickers.sock, 400, 238, 0.35, 1.9);
+  st(art.stickers.cheese, 232, 236, -0.25, 1.6);
+  st(art.stickers.sock, 30, 34, -0.5, 1.5);
+
+  grainAtop(g, 0.1, 9);
+  return c;
+}
+
+// ---------------------------------------------------------------------------
+const out = document.getElementById('out');
+const results = {};
+
+function show(label, canvas, zoom) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `<h2>${label}</h2>`;
+  const row = document.createElement('div');
+  row.className = 'row';
+  for (const cls of ['light', 'grey', 'dark']) {
+    const t = document.createElement('div');
+    t.className = 'tile ' + cls;
+    const a = document.createElement('canvas');
+    a.width = canvas.width; a.height = canvas.height;
+    a.getContext('2d').drawImage(canvas, 0, 0);
+    t.appendChild(a);
+    if (zoom) {
+      const z = document.createElement('canvas');
+      z.width = canvas.width; z.height = canvas.height;
+      z.getContext('2d').drawImage(canvas, 0, 0);
+      z.className = 'zoom';
+      z.style.width = z.style.height = (canvas.width * zoom) + 'px';
+      t.appendChild(z);
+    }
+    row.appendChild(t);
+  }
+  wrap.appendChild(row);
+  out.appendChild(wrap);
+}
+
+function addLink(name, canvas) {
+  const url = canvas.toDataURL('image/png');
+  results[name] = url;
+  const a = document.createElement('a');
+  a.href = url; a.download = name + '.png'; a.textContent = 'download ' + name + '.png';
+  out.appendChild(a);
+}
+
+const SIZES = [
+  // size, art px (128 keeps the store's 16 px transparent padding), detail level
+  [16, 16, 0],
+  [32, 32, 1],
+  [48, 48, 2],
+  [128, 96, 3],
+];
+for (const [size, artPx, lvl] of SIZES) {
+  const c = makeIcon(size, artPx, lvl);
+  show(`${size} px`, c, size <= 48 ? Math.round(128 / size) : 0);
+  addLink(String(size), c);
+}
+
+// PWA icons (web app manifest + iOS home screen). Copy to src/icons/.
+//  - 192 / 512: purpose "any", transparent padding like the 128 store icon.
+//  - 180: apple-touch-icon. iOS fills transparency with black and rounds the
+//    corners itself, so it is opaque paper with the disk inset.
+//  - maskable-512: opaque, the disk (radius 47 units) sits inside the 40% safe circle.
+const PWA_SIZES = [
+  // name, size, art px, background
+  ['192', 192, 160, null],
+  ['512', 512, 426, null],
+  ['180', 180, 156, P.paper],
+  ['maskable-512', 512, 400, P.paper],
+];
+for (const [name, size, artPx, bg] of PWA_SIZES) {
+  const c = makeIcon(size, artPx, 3, bg);
+  show(`${name} px (PWA)`, c, 0);
+  addLink(name, c);
+}
+
+// Bake the game's art once at 2 px per arena unit for the promo tile.
+const host = document.createElement('canvas');
+host.width = 800; host.height = 1200;
+const art = bakeAll(host.getContext('2d'), 2);
+const promo = drawPromo(art);
+show('promo 440 x 280', promo, 0);
+addLink('promo-440x280', promo);
+
+window.__results = results;
+// Optional: if served by a helper that accepts POST /save/<name>, push the PNGs there.
+window.__saveAll = async () => {
+  const done = [];
+  for (const [name, url] of Object.entries(results)) {
+    const r = await fetch('/save/' + name, { method: 'POST', body: url });
+    done.push(name + ':' + r.status);
+  }
+  return done.join(' ');
+};
+// Review sheet: each icon at pixel-zoom and at 1:1, on light, grey and dark toolbars.
+window.__sheet = async () => {
+  const load = (u) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.src = u; });
+  const sheet = document.createElement('canvas');
+  sheet.width = 3 * 296 + 10; sheet.height = 4 * 140 + 10;
+  const g = sheet.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  const bgs = ['#f1f3f4', '#dee1e6', '#202124'];
+  let y = 10;
+  for (const s of [16, 32, 48, 128]) {
+    const im = await load(results[String(s)]);
+    const z = s === 128 ? 128 : Math.floor(128 / s) * s;
+    for (let b = 0; b < 3; b++) {
+      const x0 = 10 + b * 296;
+      g.fillStyle = bgs[b]; g.fillRect(x0, y, 286, 136);
+      g.drawImage(im, x0 + 4, y + 4, z, z);
+      g.drawImage(im, x0 + 150 + (128 - s) / 2, y + 4 + (128 - s) / 2);
+    }
+    y += 140;
+  }
+  return sheet.toDataURL('image/png');
+};
+document.getElementById('status').textContent = 'done';
+</script>
+</body>
+</html>

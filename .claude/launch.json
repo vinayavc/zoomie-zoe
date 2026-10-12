@@ -1,0 +1,10 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "doxie-arcade",
+      "url": "http://localhost:8742",
+      "port": 8742
+    }
+  ]
+}
