@@ -1,13 +1,18 @@
-// Fits the fixed 400x600 arena into whatever space is available,
-// letterboxed and centered, with a sharp backing store (DPR capped).
+// Fills the screen with the canvas and fits the fixed 400 x 600 arena inside
+// it (plus the HUD and touch bands when they fit: see fitFrame in layout.js),
+// with a sharp backing store (DPR capped).
 
 import { CONFIG } from '../config.js';
+import { FRAME, fitFrame } from './layout.js';
+import { isExtension, isTouchDevice } from './platform.js';
 
 export class View {
   constructor(canvas, stage) {
     this.canvas = canvas;
     this.stage = stage;
-    this.k = 1; // backing-store pixels per arena pixel
+    this.k = 1;          // backing-store pixels per arena pixel
+    this.ox = 0;         // arena origin in backing-store pixels
+    this.oy = 0;
     this.resize = this.resize.bind(this);
     window.addEventListener('resize', this.resize);
     if ('ResizeObserver' in window) new ResizeObserver(this.resize).observe(stage);
@@ -15,11 +20,10 @@ export class View {
   }
 
   resize() {
-    const W = CONFIG.ARENA_W, H = CONFIG.ARENA_H;
     const r = this.stage.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) return;
-    const s = Math.min(r.width / W, r.height / H);
-    const cssW = Math.floor(W * s), cssH = Math.floor(H * s);
+    const cssW = Math.floor(r.width), cssH = Math.floor(r.height);
+    const F = fitFrame(cssW, cssH, isTouchDevice(), isExtension);
     const dpr = Math.min(window.devicePixelRatio || 1, CONFIG.MAX_DPR);
     const pxW = Math.round(cssW * dpr), pxH = Math.round(cssH * dpr);
     this.canvas.style.width = cssW + 'px';
@@ -28,14 +32,16 @@ export class View {
       this.canvas.width = pxW;
       this.canvas.height = pxH;
     }
-    this.k = pxW / W;
+    this.k = F.scale * dpr;
+    this.ox = Math.round(F.ox * dpr);
+    this.oy = Math.round(F.oy * dpr);
   }
 
   // Screen (client) coordinates -> arena coordinates. May fall outside the arena.
   toArena(clientX, clientY, out) {
     const r = this.canvas.getBoundingClientRect();
-    out.x = ((clientX - r.left) * CONFIG.ARENA_W) / (r.width || 1);
-    out.y = ((clientY - r.top) * CONFIG.ARENA_H) / (r.height || 1);
+    out.x = (clientX - r.left - FRAME.ox) / FRAME.scale;
+    out.y = (clientY - r.top - FRAME.oy) / FRAME.scale;
     return out;
   }
 }

@@ -10,6 +10,7 @@ import { Game } from './game/round.js';
 import { Menu } from './menu.js';
 import { render, artInfo } from './render.js';
 import { themeState, pickTheme, THEME_IDS } from './themes/index.js';
+import { FRAME } from './layout.js';
 
 const canvas = document.getElementById('game');
 const stage = document.getElementById('stage');
@@ -29,6 +30,7 @@ globalThis.doxie = {
   menu,
   input,
   isExtension,
+  frame: FRAME,   // the live screen layout (layout.js): bands, scale, CINCH spot
   // Test helpers for the Phase 4A extras (console only):
   spawnBall: () => game.ball.spawn(game.zoe, game.bath),
   spawnBath: () => game.bath.spawn(game.zoe),
@@ -51,14 +53,37 @@ input.onPointerUp = () => { unlockAudio(); };    // touch: pointerup is the gest
 input.onDebugKey = () => { debug.on = !debug.on; };
 window.addEventListener('touchend', unlockAudio, { passive: true });
 
+// Screen-reader live region: "Round over: score N, best M" (Phase 4C).
+const announce = document.getElementById('announce');
+let lastScene = game.scene;
+function sceneChanged() {
+  if (game.scene === lastScene) return;
+  lastScene = game.scene;
+  if (announce && game.scene === 'over') announce.textContent = 'Round over: score ' + game.score + ', best ' + game.best;
+  else if (announce && game.scene === 'play') announce.textContent = '';
+}
+
+// Sideways phone: show the "turn your phone" card and pause the round.
+// Checked before every update, so a round never runs while sideways.
+function guardSideways() {
+  if (input.usedTouch && !screenShape.touchSeen) {
+    screenShape.touchSeen = true;
+    view.resize();   // a touch device after all: make room for the CINCH band
+  }
+  if (checkSideways(CONFIG.ROTATE_MAX_H)) menu.pause();
+}
+guardSideways();
+
 const loop = createLoop(
   CONFIG.STEP,
   CONFIG.MAX_STEPS_PER_FRAME,
-  (dt) => game.update(dt),
+  (dt) => {
+    guardSideways();
+    game.update(dt);
+    sceneChanged();
+  },
   (frameDt) => {
-    // Sideways phone: show the "turn your phone" card and pause the round.
-    if (input.usedTouch) screenShape.touchSeen = true;
-    if (checkSideways(CONFIG.ROTATE_MAX_H)) menu.pause();
+    guardSideways();
     if (frameDt > 0) debug.fps += (1 / frameDt - debug.fps) * 0.05;
     render(ctx, view, game, input, debug, menu);
   },
