@@ -1,5 +1,20 @@
 # Handoff: pick up here (updated Oct 12, 2026)
 
+## LAUNCHED
+**Live: https://vinayavc.github.io/zoomie-zoe/.** Every push to `main` publishes automatically (`.github/workflows/pages.yml`).
+
+- **Verified:** the live site loads with no errors, the service worker is scoped to `/zoomie-zoe/`, and Vinny confirmed offline play on his Android phone.
+- **Every release:** bump `CACHE_VERSION` in `src/sw.js` and run `store/tools/check-precache.py`.
+- **Post-launch backlog:**
+  - the `art/util.js` `offsetPts` outline issue
+  - snap-heavy rounds (try `DOG_SNAP_PAD`)
+  - the mirrored floor faintly visible under Spring's slim header
+  - "Best 42" showing in the store screenshots
+  - the GitHub Actions `ubuntu-latest` runner moving to Ubuntu 26 (Oct 19, 2026)
+  - the shelved Chrome Web Store kit in `store/`
+
+Everything below is the history from before launch.
+
 Read `CLAUDE.md` first: brief, decisions, workflow rules, the Git rule. Then this file.
 
 ## Where we are
