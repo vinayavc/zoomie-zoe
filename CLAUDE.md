@@ -32,6 +32,7 @@ Turn the answers into `docs/character-sheet.md`. Every agent works from it. Quir
 - **Keep the main thread lean:** agents write their full output to `docs/` or `research/` files and return a summary of 1 page or less. The orchestrator reads only the summaries unless it needs detail.
 - **Always ask with AskUserQuestion.** Every question for Vinny, including open-ended ones like names, goes through the AskUserQuestion tool and never as a plain-text list. For free-text answers, offer a few options and let Vinny type under "Other".
 - **No one-shotting:** build in phases, and **get Vinny's approval after every milestone** before starting the next phase.
+- **Git:** the repo is https://github.com/vinayavc/zoomie-zoe (public, branch `main`). Commit with Vinny's no-reply identity (set in the repo config) and **push incrementally**, one commit per finished, approved step. Keep `docs/ref/` (personal photos), `archive/`, and `docs/screens/` out (see `.gitignore`). GitHub Pages stays off until launch.
 - **Plans in plain words:** explain each phase ELI5-style before starting it.
 
 ## Phased plan
