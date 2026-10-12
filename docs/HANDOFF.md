@@ -4,6 +4,7 @@
 **Live: https://vinayavc.github.io/zoomie-zoe/.** Every push to `main` publishes automatically (`.github/workflows/pages.yml`).
 
 - **Verified:** the live site loads with no errors, the service worker is scoped to `/zoomie-zoe/`, and Vinny confirmed offline play on his Android phone.
+- **Analytics (Oct 12):** GoatCounter `zoomiezoe` (dashboard https://zoomiezoe.goatcounter.com, Vinny's login), via `src/js/analytics.js`. It counts pageviews plus the `app-installed` and `app-launch` events, only on vinayavc.github.io, and respects DNT/GPC. Vinny chose not to track rounds, themes, or scores; ask before adding any.
 - **Every release:** bump `CACHE_VERSION` in `src/sw.js` and run `store/tools/check-precache.py`.
 - **Post-launch backlog:**
   - the `art/util.js` `offsetPts` outline issue
