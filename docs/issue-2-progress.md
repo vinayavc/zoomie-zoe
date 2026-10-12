@@ -1,0 +1,4 @@
+- 13:19 started: reading issue #2 and code
+- 13:19 design chosen: track first-finger (thumb-pad) touches in input.js; a quick tap (<TAP_MAX_MS, <TAP_MAX_MOVE CSS px) followed by a second quick tap within DOUBLE_TAP_MS and DOUBLE_TAP_DIST fires the cinch on the 2nd tap's release. Pad still starts on pointerdown, so steering has no delay. Menus/cards never reach it (uiDown takes those). During cooldown/stun: no cinch, CINCH button wiggles + small 'not ready' note. Hints/how-to say double-tap.
+- 13:20 implemented: config tunables, input.js double-tap, canCinch hook in main.js, not-ready cue + hints in render.js, sw v7; check-precache run
+- 13:27 tested at 375x812 touch: all checks pass (details in docs/issue-2-notes.md). Viewport reset, my tab closed. Open for Vinny: CINCH button left unchanged (double-tap is the reach fix); real-phone test on iOS Safari/Android Chrome still needed.

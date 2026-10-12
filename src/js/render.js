@@ -151,7 +151,8 @@ function bakeSurround(cw, ch, view, key) {
     g.setLineDash([]);
     g.globalAlpha = 0.85;
     g.textAlign = 'center';
-    inkText(g, 'hold and drag to steer', x0 + w / 2, y0 + h / 2 + 5, 15, P.paper, null, 'normal');
+    inkText(g, 'hold and drag to steer', x0 + w / 2, y0 + h / 2 - 4, 15, P.paper, null, 'normal');
+    inkText(g, 'double-tap to cinch', x0 + w / 2, y0 + h / 2 + 15, 13, P.paper, null, 'normal');
     g.globalAlpha = 1;
   }
   return { key, c };
@@ -777,12 +778,14 @@ function drawTouchControls(ctx, input, game) {
     ctx.stroke();
   }
   // a touch device shows CINCH from the start (Phase 4C), not after the first touch
-  if (input.usedTouch || FRAME.touch) drawCinchButton(ctx, game, input.buttonDown);
+  if (input.usedTouch || FRAME.touch) drawCinchButton(ctx, game, input.buttonDown, input.notReadyAt);
 }
 
 // The CINCH button: in the touch band below the arena when there is one (layout.js).
-function drawCinchButton(ctx, game, pressed) {
-  const x = FRAME.cinchX, y = FRAME.cinchY, r = FRAME.cinchR;
+// A double-tap during the cooldown (issue #2) makes it wiggle and say "not ready".
+function drawCinchButton(ctx, game, pressed, notReadyAt) {
+  const cue = Math.max(0, 1 - (performance.now() - notReadyAt) / (CONFIG.NOT_READY_CUE * 1000));
+  const x = FRAME.cinchX + Math.sin(cue * 28) * 4 * cue, y = FRAME.cinchY, r = FRAME.cinchR;
   const down = pressed ? 1.5 : 0;
   ctx.fillStyle = P.shadow;
   ctx.beginPath(); ctx.arc(x + 2.5, y + 3.5, r, 0, Math.PI * 2); ctx.fill();
@@ -800,6 +803,11 @@ function drawCinchButton(ctx, game, pressed) {
   ctx.stroke();
   ctx.textAlign = 'center';
   inkText(ctx, 'CINCH', x + down, y + down + 5, r > 36 ? 15 : 13, P.ink, null);
+  if (cue > 0) {
+    ctx.globalAlpha = Math.min(1, cue * 2);
+    inkText(ctx, 'not ready', FRAME.cinchX, y - r - 8 - (1 - cue) * 6, 13, P.indigo, P.paper);
+    ctx.globalAlpha = 1;
+  }
 }
 
 // ---------- cards on torn paper ----------
@@ -962,7 +970,7 @@ function controlsHint(ctx, y, touch) {
   ctx.globalAlpha = 0.8;
   ctx.textAlign = 'center';
   if (touch) {
-    inkText(ctx, 'Hold and drag to steer  ·  tap CINCH', W / 2, y + 9, 15, P.ink, null, 'normal');
+    inkText(ctx, 'Drag to steer  ·  double-tap to cinch', W / 2, y + 9, 15, P.ink, null, 'normal');
   } else {
     inkText(ctx, 'Mouse or arrows steer · Shift + arrow loops', W / 2, y, 13, P.ink, null, 'normal');
     inkText(ctx, 'Click or Space cinches · Esc pauses · M mutes', W / 2, y + 18, 13, P.ink, null, 'normal');
@@ -1075,7 +1083,7 @@ function drawHowto(ctx, menu, dt, touch) {
   const steps = touch ? [
     ['1. Steer', 'hold and drag', 'anywhere'],
     ['2. Swing', 'the leash round', art.theme.words.loot],
-    ['3. Cinch!', 'tap CINCH', 'to pull it shut'],
+    ['3. Cinch!', 'double-tap', 'to pull it shut'],
   ] : [
     ['1. Steer', 'Zoe follows the', 'mouse, or arrows'],
     ['2. Swing', 'the leash round', art.theme.words.loot],
@@ -1165,7 +1173,7 @@ function drawHowto(ctx, menu, dt, touch) {
   }
   ctx.textAlign = 'center';
   ctx.globalAlpha = 0.8;
-  if (touch) inkText(ctx, 'A second finger also cinches', W / 2, b.y + 464, 14, P.ink, null, 'normal');
+  if (touch) inkText(ctx, 'The CINCH button or a 2nd finger works too', W / 2, b.y + 464, 14, P.ink, null, 'normal');
   else inkText(ctx, 'Shift + arrow curves Zoe into a loop', W / 2, b.y + 464, 13, P.ink, null, 'normal');
   ctx.globalAlpha = 1;
   drawMenuButtons(ctx, menu);
