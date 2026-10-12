@@ -58,6 +58,7 @@ export class Game {
     this._lastEmptyClose = -999;
     this.flashT = 0;
     this.cinchPreview = false;
+    this.cinchMissT = 0; // counts down from CINCH_MISS_TIME after a cinch that caught nothing
     for (const p of this.popups) p.active = false;
   }
 
@@ -83,6 +84,12 @@ export class Game {
     return this.scene === 'over' && this.overT >= CONFIG.NAP_CARD_DELAY + CONFIG.RESTART_GUARD;
   }
 
+  // The calm start: the first CALM_START seconds of a round. Dogs wander
+  // without chasing, and dog bumps and leash snaps don't count.
+  isCalm() {
+    return this.scene === 'play' && this.elapsed < CONFIG.CALM_START;
+  }
+
   pause() {
     if (this.scene === 'play') this.paused = true;
     this.input.clear();
@@ -104,6 +111,7 @@ export class Game {
     if (this.cheeseT > 0) this.cheeseT -= dt;
     if (this.wetT > 0) this.wetT -= dt;
     if (this.flashT > 0) this.flashT -= dt;
+    if (this.cinchMissT > 0) this.cinchMissT -= dt;
     for (const p of this.popups) if (p.active && (p.t += dt) >= CONFIG.POPUP_TIME) p.active = false;
 
     const zoe = this.zoe;
@@ -114,7 +122,11 @@ export class Game {
     // Stretch-cinch: lunge, and the leash snaps shut from its end to her collar.
     if (this.input.consumeAction() && zoe.tryStretch()) {
       sfx.cinch();
-      if (leash.buildCinch(zoe)) this._closeLoop();
+      const caught = leash.buildCinch(zoe) ? this._closeLoop() : 0;
+      if (caught === 0) {
+        this.cinchMissT = CONFIG.CINCH_MISS_TIME;
+        sfx.whiff?.();
+      }
     }
     zoe.update(dt, this.input.steerAngle(zoe.x, zoe.y, zoe.heading), CONFIG.LEASH_LENGTH * CONFIG.CHEESE_LEASH_MULT);
 
@@ -128,6 +140,7 @@ export class Game {
     if (this.timeLeft <= 0) this._endRound();
   }
 
+  // Returns how many items the loop caught.
   _closeLoop() {
     const L = this.leash;
     let base = 0, n = 0, sx = 0, sy = 0, gotCheese = false;
@@ -144,7 +157,7 @@ export class Game {
       // An empty loop does nothing; the leash stays as it is.
       if (this.elapsed - this._lastEmptyClose > 0.3) this.closes++;
       this._lastEmptyClose = this.elapsed;
-      return;
+      return 0;
     }
     this.closes++;
     this.captures++;
@@ -169,6 +182,7 @@ export class Game {
     if (this.chain > 1) this._popup(cx, cy + 22, 'chain x' + this.chain, false);
     else if (n > 1) this._popup(cx, cy + 22, n + ' in one loop', false);
     sfx.caught(this.chain, n);
+    return n;
   }
 
   // While the stretch is ready, mark the items a press would catch.
@@ -189,8 +203,10 @@ export class Game {
     const want = Math.min(CONFIG.DOG_MAX, CONFIG.DOG_START + Math.floor(this.elapsed / CONFIG.DOG_ADD_EVERY));
     while (this.dogs.length < want) this.dogs.push(makeDog(zoe));
 
+    const calm = this.isCalm();
     for (const dog of this.dogs) {
-      updateDog(dog, dt, zoe, this.bath);
+      updateDog(dog, dt, zoe, this.bath, calm);
+      if (calm) continue; // no bumps or snaps during the calm start
 
       if (zoe.invulnT <= 0 && dogTouchesZoe(dog, zoe)) {
         zoe.stun();

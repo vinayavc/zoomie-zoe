@@ -69,7 +69,7 @@ export const CONFIG = {
 
   // ---- Other dogs (hazards) ----
   DOG_START: 2,
-  DOG_MAX: 5,
+  DOG_MAX: 4,               // Phase 4C: was 5; caps late-round crowding (one more dog at 15 s and 30 s)
   DOG_ADD_EVERY: 15,        // one more dog every N seconds
   DOG_RADIUS: 12,
   DOG_WANDER_SPEED: 50,
@@ -162,4 +162,20 @@ export const CONFIG = {
   CRITTER_HOP_HZ: 2.2,      // 'hop' critters: hops per second (looks only)
   CRITTER_HOP_H: 6,         // 'hop' critters: hop height
   ROTATE_MAX_H: 520,        // touch screen wider than tall and shorter than this (CSS px) = sideways phone
+
+  // ---- Gameplay fairness (Phase 4C, Builder B) ----
+  CALM_START: 3,            // first N s of a round: dogs wander but don't chase; no bumps or snaps
+  DOG_SPAWN_AHEAD_DIST: 260,// a new dog never appears in front of her closer than this...
+  DOG_SPAWN_AHEAD_ANGLE: 0.8, // ...within this angle (radians) either side of her heading
+  CINCH_MISS_TIME: 0.6,     // game.cinchMissT counts down from this after a cinch that caught nothing
+  CALM_KEEP_AWAY: 140,      // during the calm start, dogs closer than this to her head walk away
+
+  // ---- Layout, menus and teaching (Phase 4C, Builder A) ----
+  RESTART_LOCK: 0.75,       // game over: the card must be up this long before Play again / Enter / Space restart
+  HUD_BAND_H: 64,           // HUD band above the arena (arena px), when the screen has room for it
+  CTRL_BAND_MIN: 96,        // touch: the thumb-pad + CINCH band below the arena needs at least this
+  CTRL_BAND_MAX: 190,       // ...and never takes more than this (the rest is split above and below)
+  BAND_MIN_SCALE: 0.88,     // use the bands only if the arena keeps at least this share of its size
+  CTRL_CINCH_R: 40,         // CINCH button radius when it sits in the band
+  SNAP_WARN_DIST: 18,       // leash trembles where a critter is this much closer than a snap
 };
