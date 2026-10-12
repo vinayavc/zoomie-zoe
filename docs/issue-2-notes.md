@@ -50,3 +50,19 @@ Built Oct 12, 2026 on branch `issue-2-double-tap-cinch`.
 ## Notes
 - The cinch fires on the second tap's *release*, so it lands about 50–100 ms after the finger goes down. Firing on the second press would be faster, but a tap-then-drag would then cinch.
 - The touch hint shown can switch to the mouse version after a real mouse click in the emulator. That is how the existing device detection behaves and was not changed here.
+
+## Follow-up from the playtest (docs/issue-2-playtest.md)
+- **B3, cue by the thumb**:
+  - A touch cinch during the cooldown or a stun now goes through `input._touchCinch(x, y)`. That covers a double-tap, a second finger and the CINCH button.
+  - It stores `notReadyX/Y`, and `render.js` → `drawNotReady` draws "not ready" just above that point.
+  - The note is kept inside the arena: x between 40 and 360, and y below the HUD strip and above the arena bottom. So a tap in the control band shows the note just above the band.
+  - If the CINCH button was pressed, the note stays above the button.
+  - The button wiggle stays.
+  - New: pressing the CINCH button during the cooldown now shows the cue too. Before, it silently did nothing.
+- **B1, Play after How-to → Back: not reproducible.** Play started on the first tap 5 times out of 5, with gaps of 30, 100, 300, 300 and 500 ms after Back. The menu code has no lock-out there. The playtester's miss happened at 1–2 fps, so it was most likely the throttling.
+- **B2, pad hint on hybrid devices: fixed.**
+  - The baked touch-band pad now follows the same last-input rule as the card hints. With mouse or keys it reads "mouse or arrows steer / click or Space cinches".
+  - The bake key includes this mode, so it rebakes only when the mode changes.
+  - Limit: a touch on a menu card does not switch the mode back to touch, because `uiDown` returns before the mode is set. This was already the case. The first touch in play switches the cards and the pad back together, so they stay consistent.
+- `CACHE_VERSION` stays `v7`, and `check-precache.py` passes.
+- Verified at 375 × 812 with the mobile preset, with screenshots of the cue placement (band, top edge, button) and of the mouse pad hint. No console errors.

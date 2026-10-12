@@ -99,14 +99,14 @@ function prewarm(ctx, a) {
 // Baked into one screen-sized canvas per size + theme: the theme's letterbox
 // color under paper grain, a hard paper shadow under the arena, the HUD band's
 // paper (joined to the arena's own top strip), and the touch band's steer pad.
-function drawSurround(ctx, view) {
+function drawSurround(ctx, view, touchUI) {
   const cw = ctx.canvas.width, ch = ctx.canvas.height;
-  const key = cw + 'x' + ch + '|' + view.ox + ',' + view.oy + '|' + view.k + '|' + FRAME.rev + '|' + art.theme.id;
-  if (!sideFill || sideFill.key !== key) sideFill = bakeSurround(cw, ch, view, key);
+  const key = cw + 'x' + ch + '|' + view.ox + ',' + view.oy + '|' + view.k + '|' + FRAME.rev + '|' + art.theme.id + '|' + touchUI;
+  if (!sideFill || sideFill.key !== key) sideFill = bakeSurround(cw, ch, view, key, touchUI);
   ctx.drawImage(sideFill.c, 0, 0);
 }
 
-function bakeSurround(cw, ch, view, key) {
+function bakeSurround(cw, ch, view, key, touchUI) {
   const c = document.createElement('canvas');
   c.width = cw; c.height = ch;
   const g = c.getContext('2d');
@@ -151,8 +151,9 @@ function bakeSurround(cw, ch, view, key) {
     g.setLineDash([]);
     g.globalAlpha = 0.85;
     g.textAlign = 'center';
-    inkText(g, 'hold and drag to steer', x0 + w / 2, y0 + h / 2 - 4, 15, P.paper, null, 'normal');
-    inkText(g, 'double-tap to cinch', x0 + w / 2, y0 + h / 2 + 15, 13, P.paper, null, 'normal');
+    // the pad's words follow the last input used, like the card hints (issue #2, B2)
+    inkText(g, touchUI ? 'hold and drag to steer' : 'mouse or arrows steer', x0 + w / 2, y0 + h / 2 - 4, 15, P.paper, null, 'normal');
+    inkText(g, touchUI ? 'double-tap to cinch' : 'click or Space cinches', x0 + w / 2, y0 + h / 2 + 15, 13, P.paper, null, 'normal');
     g.globalAlpha = 1;
   }
   return { key, c };
@@ -173,7 +174,7 @@ export function render(ctx, view, game, input, debug, menu) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  drawSurround(ctx, view);
+  drawSurround(ctx, view, input.mode === 'touch' || (input.mode === 'none' && FRAME.touch));
 
   // background (baked: bedspread, sun patch, blankets, HUD paper strip)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -779,10 +780,28 @@ function drawTouchControls(ctx, input, game) {
   }
   // a touch device shows CINCH from the start (Phase 4C), not after the first touch
   if (input.usedTouch || FRAME.touch) drawCinchButton(ctx, game, input.buttonDown, input.notReadyAt);
+  drawNotReady(ctx, input);
+}
+
+// "not ready" (issue #2): a touch cinch during the cooldown shows a small note
+// where the finger was (kept inside the arena), or by the CINCH button if it was pressed.
+function drawNotReady(ctx, input) {
+  const cue = Math.max(0, 1 - (performance.now() - input.notReadyAt) / (CONFIG.NOT_READY_CUE * 1000));
+  if (cue <= 0) return;
+  let x = input.notReadyX, y = input.notReadyY - 28;
+  if (x === FRAME.cinchX && input.notReadyY === FRAME.cinchY) y = FRAME.cinchY - FRAME.cinchR - 8;
+  else {
+    x = Math.min(W - 40, Math.max(40, x));
+    y = Math.min(H - 12, Math.max((FRAME.banded ? 10 : CONFIG.HUD_H) + 16, y));
+  }
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = Math.min(1, cue * 2);
+  inkText(ctx, 'not ready', x, y - (1 - cue) * 6, 13, P.indigo, P.paper);
+  ctx.globalAlpha = 1;
 }
 
 // The CINCH button: in the touch band below the arena when there is one (layout.js).
-// A double-tap during the cooldown (issue #2) makes it wiggle and say "not ready".
+// A touch cinch during the cooldown (issue #2) makes it wiggle (drawNotReady adds the note).
 function drawCinchButton(ctx, game, pressed, notReadyAt) {
   const cue = Math.max(0, 1 - (performance.now() - notReadyAt) / (CONFIG.NOT_READY_CUE * 1000));
   const x = FRAME.cinchX + Math.sin(cue * 28) * 4 * cue, y = FRAME.cinchY, r = FRAME.cinchR;
@@ -803,11 +822,6 @@ function drawCinchButton(ctx, game, pressed, notReadyAt) {
   ctx.stroke();
   ctx.textAlign = 'center';
   inkText(ctx, 'CINCH', x + down, y + down + 5, r > 36 ? 15 : 13, P.ink, null);
-  if (cue > 0) {
-    ctx.globalAlpha = Math.min(1, cue * 2);
-    inkText(ctx, 'not ready', FRAME.cinchX, y - r - 8 - (1 - cue) * 6, 13, P.indigo, P.paper);
-    ctx.globalAlpha = 1;
-  }
 }
 
 // ---------- cards on torn paper ----------

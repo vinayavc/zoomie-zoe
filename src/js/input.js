@@ -44,7 +44,9 @@ export class Input {
     // touch still starts the thumb-pad at once, so steering never waits.
     this.tap = { id: -1, t: 0, x: 0, y: 0, ok: false }; // the touch being watched
     this.lastTap = { t: -1e9, x: 0, y: 0 };              // when and where the last quick tap ended
-    this.notReadyAt = -1e9;      // performance.now() of a double-tap during the cooldown (render cue)
+    this.notReadyAt = -1e9;      // performance.now() of a touch cinch tried during the cooldown (render cue)
+    this.notReadyX = 0;          // ...where (arena px): the second tap or finger, or the CINCH button
+    this.notReadyY = 0;
 
     // Hooks set by main.js
     this.canCinch = () => true;  // false during the cinch cooldown (or a stun)
@@ -160,7 +162,7 @@ export class Input {
         if (this._inButton(p.x, p.y) && this.buttonId === -1) {
           this.buttonId = e.pointerId;
           this.buttonDown = true;
-          this.actionQueued = true;
+          this._touchCinch(FRAME.cinchX, FRAME.cinchY);
         } else if (!this.pad.active) {
           const pad = this.pad;
           pad.active = true; pad.id = e.pointerId;
@@ -168,7 +170,7 @@ export class Input {
           const t = this.tap;
           t.id = e.pointerId; t.t = performance.now(); t.x = e.clientX; t.y = e.clientY; t.ok = true;
         } else {
-          this.actionQueued = true; // second finger = stretch
+          this._touchCinch(p.x, p.y); // second finger = stretch
           this.tap.ok = false;      // ...and the steering finger's touch is no longer a tap
           this.lastTap.t = -1e9;
         }
@@ -231,11 +233,19 @@ export class Input {
     if (t.t - last.t <= CONFIG.DOUBLE_TAP_MS
       && Math.hypot(t.x - last.x, t.y - last.y) <= CONFIG.DOUBLE_TAP_DIST) {
       last.t = -1e9; // a third tap starts a new pair
-      if (this.canCinch()) this.actionQueued = true;
-      else this.notReadyAt = now;
+      const p = this.view.toArena(e.clientX, e.clientY, this._p);
+      this._touchCinch(p.x, p.y);
       return;
     }
     last.t = now; last.x = t.x; last.y = t.y;
+  }
+
+  // A cinch from touch. During the cooldown (or a stun) it only shows the
+  // "not ready" cue at (x, y), where the finger was.
+  _touchCinch(x, y) {
+    if (this.canCinch()) { this.actionQueued = true; return; }
+    this.notReadyAt = performance.now();
+    this.notReadyX = x; this.notReadyY = y;
   }
 
   _key(e, down) {
