@@ -6,7 +6,7 @@
 // If you add a new .js file, add it to FILES too (see docs/pwa-notes.md), then
 // run: python3 store/tools/check-precache.py
 
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const CACHE_NAME = 'zoomie-zoe-' + CACHE_VERSION;
 
 // Every file the game needs, relative to this file. Fetched on the first visit.
@@ -22,6 +22,7 @@ const FILES = [
   'icons/512.png',
   'icons/maskable-512.png',
   'js/main.js',
+  'js/analytics.js',
   'js/audio.js',
   'js/geom.js',
   'js/input.js',

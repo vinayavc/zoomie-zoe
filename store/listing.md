@@ -45,7 +45,7 @@ CONTROLS
 • Sound: the speaker button or the M key
 
 PRIVACY
-Zoomie Zoe collects no data. Your best score and your sound setting are saved only on your own device.
+Zoomie Zoe collects no personal data. The extension sends nothing over the internet. The website version counts visits and installs anonymously with GoatCounter (no cookies; Do Not Track and Global Privacy Control respected). Your best score and your sound setting are saved only on your own device.
 
 Zoe is a real dog. The game's art and characters are original.
 ```
@@ -92,7 +92,7 @@ Justification (only if the dashboard asks):
 ```
 All JavaScript is bundled in the package as local files loaded by index.html. The extension makes no network requests, uses no eval, and loads no external scripts, fonts or images.
 ```
-(Checked on Oct 2, 2026: there are no `fetch`, XHR, WebSocket, `import()` or `http(s)://` references in `src/`. Re-check before each upload.)
+(Re-checked Oct 12, 2026: no `fetch`, XHR, WebSocket or `import()` in `src/`. The only outside URL is the GoatCounter endpoint in `js/analytics.js`, which sends only on vinayavc.github.io, so the extension never contacts it. Re-check before each upload.)
 
 ## Data usage
 - **What user data do you plan to collect?** Leave **every box unticked**. Zoomie Zoe collects nothing. The best score, the mute setting and the how-to-seen flag never leave the device, and they aren't personal data.

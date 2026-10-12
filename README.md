@@ -8,7 +8,7 @@ Zoe is a mini long-haired dachshund with a very long body, very floppy ears and 
 
 Watch out for the other dogs. One bump and Zoe gets dizzy, and if one touches the leash, it snaps. Each round lasts 60 seconds. Beat your best score, then go again.
 
-It works on phones, tablets and laptops, with no sign-up, no ads and no tracking.
+It works on phones, tablets and laptops, with no sign-up, no ads and no tracking cookies.
 
 ## How to play
 
@@ -46,6 +46,10 @@ On iPhone, the home-screen app and Safari keep separate best scores.
 ## How it's made
 
 Plain HTML, CSS and JavaScript with **no libraries and no frameworks**. **All the art is drawn in code**, the watercolor washes and paper cutouts included. There are no image files for the game art, and the sounds are synthesized live with the Web Audio API. Nothing loads from other websites.
+
+## Privacy
+
+The website counts visits and app installs anonymously with [GoatCounter](https://www.goatcounter.com): no cookies, no stored IDs, no personal data, and nothing about your games or scores. If your browser sends Do Not Track or Global Privacy Control, nothing is counted. The Chrome extension sends nothing at all. Full policy: [`store/privacy.html`](store/privacy.html).
 
 ## Run it locally
 
